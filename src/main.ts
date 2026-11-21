@@ -182,6 +182,7 @@ function layoutUI() {
     el.style.height = rc.h * k + 'px';
     el.style.setProperty('--ph', String(L.plate.h));
     el.style.setProperty('--sh', String(rc.h));
+    el.style.setProperty('--sw', String(rc.w));
   });
 }
 let lastNav = -1;
