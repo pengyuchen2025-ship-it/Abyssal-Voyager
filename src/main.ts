@@ -63,7 +63,8 @@ document.body.classList.toggle('touch', coarse || q.has('touch'));
 // bridge：在舰桥上（背后潜艇自己慢慢游）；dive：镜头穿过主圆窗进入游戏；play：游戏中；surface：从游戏退回舰桥
 type State = 'bridge' | 'dive' | 'play' | 'surface';
 let state: State = 'bridge';
-const bridge = new Bridge();
+const bridgeCv = $('bridge-cv') as HTMLCanvasElement;
+const bridge = new Bridge(bridgeCv);
 const bridgeUI = $('bridge-ui');
 const stEls = Array.from(bridgeUI.querySelectorAll<HTMLElement>('.st'));
 /** 舰桥朝向：以「操作台」为单位，可以一直加减（绕圈），显示时取模 */
@@ -73,7 +74,7 @@ let panFrom = pan, panT = 1;
 const PAN_DUR = 0.5;
 /** 进出游戏的过渡进度 0..1 */
 let diveT = 0;
-const DIVE_DUR = 0.8;
+const DIVE_DUR = +(q.get('divedur') ?? 0) || 0.8; // 调试：?divedur=4 放慢穿窗过渡
 let started = false;
 let guideOpen = false;
 const mod = (a: number, n: number) => ((a % n) + n) % n;
@@ -156,18 +157,69 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) surface(true);
 });
 
-/** 舰桥文字层：和画布同位置同大小，里面每个元素按舰桥布局摆（单位：帧缓冲像素 × 放大倍数） */
-let uiW = 0, uiH = 0, uiS = 0;
+/**
+ * 舰桥上：游戏镜头挪到主圆窗中间、并缩小（fit = 1/qEnd），潜艇就在圆窗正中。
+ * 穿过圆窗：舰桥画布（CSS 缩放）和游戏镜头（缩放 + 支点位置）绕同一个不动点 F、按同一个倍数 q 放大，
+ * q 从 1 到 qEnd（圆窗正好盖满整个屏幕）。到 qEnd 时游戏镜头正好回到正常的尾随镜头——
+ * 两边一直对齐，中间没有任何跳变，就像镜头推进窗口。
+ */
+let lastXf = '';
+function placeCanvases() {
+  bridge.ensure(stage.clientWidth, stage.clientHeight);
+  if (state === 'play') {
+    if (cam.fx !== 0.5) {
+      cam.fx = 0.5;
+      cam.update(r.W, r.H);
+    }
+    if (lastXf !== 'none') {
+      bridgeCv.style.display = 'none';
+      bridgeCv.style.transform = '';
+      lastXf = 'none';
+    }
+    return;
+  }
+  bridgeCv.style.display = '';
+  const L0 = parseFloat(canvas.style.left) || 0, T0 = parseFloat(canvas.style.top) || 0;
+  const cw = parseFloat(canvas.style.width), ch = parseFloat(canvas.style.height);
+  const vw = stage.clientWidth, vh = stage.clientHeight;
+  const w = bridge.window(pan);
+  // 圆窗要放大多少倍才能盖满整个屏幕
+  const far = Math.max(Math.hypot(w.x, w.y), Math.hypot(vw - w.x, w.y), Math.hypot(w.x, vh - w.y), Math.hypot(vw - w.x, vh - w.y));
+  // 不必放大到盖满四个角：后半段舰桥淡出，露出的就是同一个游戏画面。这样舰桥上潜艇在窗里也不会太小
+  const qEnd = Math.max(1.4, (far / w.r) * 0.62);
+  // 正常尾随镜头里潜艇（镜头支点）在屏幕上的位置
+  const Nx = L0 + cw * 0.5, Ny = T0 + ch * cam.fy;
+  const Fx = (qEnd * w.x - Nx) / (qEnd - 1), Fy = (qEnd * w.y - Ny) / (qEnd - 1);
+  const e = state === 'bridge' ? 0 : smoothstep(0, 1, diveT);
+  const q = Math.pow(qEnd, e);
+  // 游戏镜头：支点跟着放大走，缩放 = q / qEnd
+  const Px = Fx + q * (w.x - Fx), Py = Fy + q * (w.y - Fy);
+  cam.fx = (Px - L0) / cw;
+  cam.fy = (Py - T0) / ch;
+  cam.zoom *= q / qEnd;
+  cam.update(r.W, r.H);
+  // 舰桥画布（左上角在 0,0）：p → F + q (p − F)
+  const bt = q === 1 ? '' : `translate(${Fx * (1 - q)}px, ${Fy * (1 - q)}px) scale(${q})`;
+  const op = String(1 - smoothstep(0.55, 1, e));
+  if (bt + op !== lastXf) {
+    bridgeCv.style.transform = bt;
+    bridgeCv.style.opacity = op;
+    lastXf = bt + op;
+  }
+}
+
+/** 舰桥文字层：和舰桥画布同位置同大小，里面每个元素按舰桥布局摆（单位：舰桥画布像素 × 放大倍数） */
+let uiW = 0, uiH = 0;
 function layoutUI() {
-  bridge.ensure(r.W, r.H);
-  if (uiW === r.W && uiH === r.H && uiS === r.scale) return;
-  uiW = r.W; uiH = r.H; uiS = r.scale;
-  const L = bridge.L, k = r.scale;
+  bridge.ensure(stage.clientWidth, stage.clientHeight);
+  if (uiW === bridge.L.W && uiH === bridge.L.H) return;
+  uiW = bridge.L.W; uiH = bridge.L.H;
+  const L = bridge.L, k = bridge.a;
   const st = bridgeUI.style;
-  st.left = canvas.style.left;
-  st.top = canvas.style.top;
-  st.width = canvas.style.width;
-  st.height = canvas.style.height;
+  st.left = '0px';
+  st.top = '0px';
+  st.width = bridgeCv.style.width;
+  st.height = bridgeCv.style.height;
   st.setProperty('--s', String(k));
   const rects: Record<string, Rect> = {
     plate: L.plate, screenL: L.screenL, screenR: L.screenR, upScreen: L.upScreen, hgScreen: L.hgScreen,
@@ -186,10 +238,10 @@ function layoutUI() {
   });
 }
 let lastNav = -1;
-function updateBridgeUI(panPx: number) {
+function updateBridgeUI() {
   layoutUI();
   stEls.forEach((el, i) => {
-    el.style.transform = `translateX(${Math.round(bridge.stationX(i, panPx)) * r.scale}px)`;
+    el.style.transform = `translateX(${Math.round(bridge.stationX(i, pan)) * bridge.a}px)`;
   });
   const cur = mod(stIdx, N_ST);
   if (cur !== lastNav) {
@@ -265,27 +317,10 @@ function frame(now: number) {
     game.update(dt, input, cam, subR.screen);
   }
   game.applyCamera(cam, r.W, r.H, paused ? 0 : dt);
-  bridge.ensure(r.W, r.H);
-  const panPx = pan * r.W;
-  const ease = smoothstep(0, 1, diveT);
   const onBridge = state !== 'play';
-  // 舰桥上：镜头挪到主圆窗中间，并缩小一点让潜艇整个装进圆窗；穿过圆窗时慢慢变回游戏镜头
-  const focus = state === 'bridge' ? 1 : state === 'play' ? 0 : 1 - ease;
-  const zoom = 1 + 5 * ease * ease;
-  if (focus > 0.001) {
-    const Lw = bridge.L.win;
-    const fx = (bridge.stationX(0, panPx) + Lw.cx) / r.W, fy = Lw.cy / r.H;
-    const fit = Math.min(1, (Lw.R * 2.6) / Math.min(r.W, r.H));
-    cam.fx = 0.5 + (fx - 0.5) * focus;
-    cam.fy += (fy - cam.fy) * focus;
-    cam.zoom *= Math.min(1, fit * zoom);
-    cam.update(r.W, r.H);
-  } else if (cam.fx !== 0.5) {
-    cam.fx = 0.5;
-    cam.update(r.W, r.H);
-  }
+  placeCanvases();
   // 圆窗不在屏幕上时不用画海底
-  const drawWorld = !onBridge || zoom > 1 || bridge.windowVisible(panPx);
+  const drawWorld = !onBridge || state !== 'bridge' || bridge.windowVisible(pan);
   const vp = game.vp;
   water.fogAmount = vp.fog;
   water.update(cam, r.H, game.region, game.time);
@@ -320,8 +355,8 @@ function frame(now: number) {
       }, world, vp.scope);
     }
   }
-  if (onBridge) bridge.draw(r, panPx, game.time, zoom);
-  updateBridgeUI(panPx);
+  if (onBridge) bridge.draw(pan, game.time);
+  updateBridgeUI();
   if (q.has('pre')) preCopy = r.buf.slice();
   r.present();
 

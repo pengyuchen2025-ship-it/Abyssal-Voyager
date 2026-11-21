@@ -23,7 +23,8 @@
     html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
     body { font: 13px/1.5 var(--cjk); color: var(--ink); -webkit-user-select: none; user-select: none; touch-action: none; }
     #stage { position: fixed; inset: 0; overflow: hidden; cursor: crosshair; }
-    #view { position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+    #view { position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; display: block; transform-origin: 0 0; }
+    #bridge-cv { position: absolute; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; pointer-events: none; transform-origin: 0 0; }
     button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 
     /* 像素边框：九宫格切片，四角缺一格，左上亮右下暗 */
@@ -145,7 +146,7 @@
   </style>
 </head>
 <body class="bridge">
-  <div id="stage"><canvas id="view"></canvas>
+  <div id="stage"><canvas id="view"></canvas><canvas id="bridge-cv"></canvas>
     <div id="bridge-ui">
       <div class="st" data-st="0">
         <div class="plate" data-r="plate"><h1>深流潜航</h1><small>ABYSSAL VOYAGER</small></div>
