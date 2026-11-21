@@ -270,77 +270,124 @@ export class SubRenderer {
   private mastCol = new Uint32Array(0);
   private mastMask = new Uint8Array(0);
   private mp = { x: 0, y: 0, h: 0 };
+  private mp2 = { x: 0, y: 0, h: 0 };
   private mpj: Projected = { x: 0, y: 0, depth: 0, k: 0 };
 
   /**
-   * 潜望镜：从指挥塔顶（模型坐标 a = ma, h = base）竖直伸出 ext 长的镜管，顶上一个带镜片的镜头。
-   * 沿镜管取样、投影，逐段画圆；和艇身一样加 1 像素深色描边。画在艇身之后、深度略靠前。
+   * 潜望镜（卡通造型）：从指挥塔顶竖直伸出的镜管，下段是细一点的灰色伸缩管，上段是和艇身同色的橙色粗管，
+   * 顶上弯成 J 形，接一段水平镜筒，镜筒前端是圆形镜片。镜头可以绕镜管转（yaw，相对艇首，弧度）。
+   * 做法：沿镜管 / 弯头 / 镜筒取一串球，镜片取一片圆盘上的点，全部投影后按深度从远到近画，
+   * 最后和艇身一样加 1 像素深色描边。整体深度略靠前，画在艇身上面。
    */
-  drawMast(r: Renderer, cam: Camera, s: SubPose, ma: number, base: number, ext: number, tint: PixelTint | null) {
-    if (ext <= 0.02 || !this.screen.visible) return;
+  drawMast(r: Renderer, cam: Camera, s: SubPose, ma: number, base: number, ext: number, yaw: number, tint: PixelTint | null) {
+    if (ext <= 0.05 || !this.screen.visible) return;
     const k = this.screen.k, depth = this.screen.depth - 0.5;
-    const top = base + ext;
-    const p = this.mp, q = this.mpj;
-    // 取样点：镜管（半径 0.55）、镜头（半径 0.9，高 1.8）、镜片（前方 0.8，自发光）
-    const pts: [number, number, number, number][] = []; // a, h, 半径, 种类 0 镜管 1 镜头 2 镜片
-    for (let h = base - 0.6; h <= top - 1.6; h += 0.3) pts.push([ma, h, 0.55, 0]);
-    const hb = Math.max(base - 0.3, top - 1.8);
-    for (let h = hb; h <= top; h += 0.3) pts.push([ma, h, 0.9, 1]);
-    for (let h = hb; h <= top; h += 0.3) pts.push([ma + 0.5, h, 0.8, 1]);
-    pts.push([ma + 1.1, top - 0.9, 0.5, 2]);
-    const scr: number[] = [];
+    const top = base + ext; // 镜筒中心线高度
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const BEND = 1.5, BARREL = 2.0, HEAD = 1.25, LENS = 1.05;
+    // 取样：[a, c, h, 半径, 材质]  材质 0 灰管 1 橙管 2 深色箍 3 镜片 4 镜片外圈
+    const S: number[][] = [];
+    const split = base + ext * 0.42; // 灰色伸缩段和橙色段的分界
+    for (let h = base - 0.6; h < Math.min(split, top - BEND); h += 0.3) S.push([ma, 0, h, 0.55, 0]);
+    for (let h = split; h < top - BEND; h += 0.3) S.push([ma, 0, h, 0.78, 1]);
+    if (split < top - BEND) S.push([ma, 0, split, 0.9, 2]);
+    // 弯头：四分之一圆，从竖直转到镜头朝向
+    const hb = top - BEND;
+    for (let q = 0; q <= 6; q++) {
+      const th = (q / 6) * (Math.PI / 2);
+      const off = BEND * (1 - Math.cos(th));
+      S.push([ma + off * cy, off * sy, hb + BEND * Math.sin(th), 0.8 + (HEAD - 0.8) * (q / 6), 1]);
+    }
+    // 水平镜筒，前端稍粗（遮光罩）
+    for (let q = 0; q <= 7; q++) {
+      const d = BEND + (q / 7) * BARREL;
+      S.push([ma + d * cy, d * sy, top, HEAD, 1]);
+    }
+    const sc = this.mp, sc2 = this.mp2, q = this.mpj;
+    // 镜头朝向（世界）和朝镜头的判断
+    modelToWorld(s, ma + BEND * cy, BEND * sy, top, sc);
+    modelToWorld(s, ma + (BEND + BARREL) * cy, (BEND + BARREL) * sy, top, sc2);
+    let dx = sc2.x - sc.x, dy = sc2.y - sc.y, dh = sc2.h - sc.h;
+    const dl = Math.hypot(dx, dy, dh) || 1;
+    dx /= dl; dy /= dl; dh /= dl;
+    const fwd = dx * cam.sinH * cam.cosP + dy * cam.cosH * cam.cosP - dh * cam.sinP; // >0：镜片背对镜头
+    // 镜片：前端圆盘上的点（圆盘所在平面 ⟂ 镜筒），朝镜头时才画
+    const frontD = BEND + BARREL + HEAD * 0.75; // 球串前端表面再往前一点
+    if (fwd < 0.15) {
+      const vis = Math.min(1, (0.15 - fwd) * 4);
+      for (let u = -LENS; u <= LENS; u += 0.15)
+        for (let w = -LENS; w <= LENS; w += 0.15) {
+          const rr = Math.hypot(u, w);
+          if (rr > LENS) continue;
+          // 圆盘局部：u 沿镜头的「右」方向，w 沿竖直
+          S.push([ma + frontD * cy - u * sy, frontD * sy + u * cy, top + w, 0.2, rr > LENS * 0.72 || vis < 0.5 ? 4 : 3, u / LENS, w / LENS]);
+        }
+    }
+    // 投影
+    const pts: { x: number; y: number; r: number; m: number; d: number; u: number; w: number }[] = [];
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const [a, h, rad, kind] of pts) {
-      modelToWorld(s, a, 0, h, p);
-      if (!cam.project(p.x, p.y, p.h, q)) return;
-      const rr = Math.max(0.6, rad * k);
-      scr.push(q.x, q.y, rr, kind);
+    for (const e of S) {
+      modelToWorld(s, e[0], e[1], e[2], sc);
+      if (!cam.project(sc.x, sc.y, sc.h, q)) return;
+      const rr = Math.max(e[4] >= 3 ? 0.5 : 0.6, e[3] * k);
+      pts.push({ x: q.x, y: q.y, r: rr, m: e[4], d: q.depth - (e[4] >= 3 ? 1.2 : 0), u: e[5] ?? 0, w: e[6] ?? 0 });
       x0 = Math.min(x0, q.x - rr); x1 = Math.max(x1, q.x + rr);
       y0 = Math.min(y0, q.y - rr); y1 = Math.max(y1, q.y + rr);
     }
+    pts.sort((a, b) => b.d - a.d);
     const bx0 = Math.floor(x0) - 1, by0 = Math.floor(y0) - 1;
     const bw = Math.ceil(x1) + 2 - bx0, bh = Math.ceil(y1) + 2 - by0;
-    if (bw * bh > 40000) return;
+    if (bw * bh > 60000) return;
     if (this.mastCol.length < bw * bh) {
       this.mastCol = new Uint32Array(bw * bh * 2);
       this.mastMask = new Uint8Array(bw * bh * 2);
     }
     const col = this.mastCol, mask = this.mastMask;
     mask.fill(0, 0, bw * bh);
-    const steel = [pack(70, 80, 88), pack(118, 130, 138), pack(170, 182, 188), pack(214, 222, 224)];
-    const glass = pack(142, 244, 243);
-    for (let n = 0; n < scr.length; n += 4) {
-      const cx = scr[n] - bx0, cy = scr[n + 1] - by0, rr = scr[n + 2], kind = scr[n + 3];
-      for (let y = Math.floor(cy - rr); y <= Math.ceil(cy + rr); y++)
+    const ramp = (c: number[][]) => c.map((v) => pack(v[0], v[1], v[2]));
+    const RAMPS = [
+      ramp([[70, 80, 88], [118, 130, 138], [170, 182, 188], [214, 222, 224]]), // 灰管
+      ramp([[194, 88, 42], [242, 162, 58], [247, 196, 106], [255, 238, 196]]), // 橙管（艇身色）
+      ramp([[30, 38, 46], [43, 53, 64], [70, 84, 96], [110, 126, 138]]), // 深色箍
+    ];
+    const glass = ramp([[60, 150, 170], [142, 244, 243], [220, 255, 252], [255, 255, 255]]);
+    const lensRim = pack(43, 53, 64);
+    for (const p of pts) {
+      const cx = p.x - bx0, cyy = p.y - by0, rr = p.r;
+      for (let y = Math.floor(cyy - rr); y <= Math.ceil(cyy + rr); y++)
         for (let x = Math.floor(cx - rr); x <= Math.ceil(cx + rr); x++) {
-          const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
-          if (dx * dx + dy * dy > rr * rr || x < 0 || y < 0 || x >= bw || y >= bh) continue;
+          const ox = x + 0.5 - cx, oy = y + 0.5 - cyy;
+          if (ox * ox + oy * oy > rr * rr || x < 0 || y < 0 || x >= bw || y >= bh) continue;
           const i = y * bw + x;
-          if (kind === 2) { col[i] = glass; mask[i] = 2; continue; }
-          if (mask[i] === 2) continue;
-          // 圆柱的明暗：左亮右暗，镜头顶面更亮
-          const u = dx / rr;
-          let l = u < -0.35 ? 2 : u < 0.4 ? 1 : 0;
-          if (u < -0.1 && u > -0.6 && rr > 1.4) l = 3;
-          if (kind === 1 && dy < -rr * 0.4) l = Math.min(3, l + 1);
-          col[i] = steel[l];
-          mask[i] = 1;
+          if (p.m === 4) col[i] = lensRim;
+          else if (p.m === 3) {
+            // 镜片：左上角一道高光
+            const g = p.u + p.w * -1;
+            col[i] = glass[g < -0.55 ? 3 : g < -0.1 ? 2 : g > 0.5 ? 0 : 1];
+          } else {
+            const u = ox / rr, v = oy / rr;
+            const t = u + v * 0.7;
+            let l = t < -0.55 ? 2 : t > 0.5 ? 0 : 1;
+            if (rr >= 1.6 && Math.abs(u + 0.4) < 0.22 && Math.abs(v + 0.35) < 0.3) l = 3;
+            col[i] = RAMPS[p.m][l];
+          }
+          mask[i] = p.m >= 3 ? 2 : 1;
         }
     }
     const { W, H, buf, z: zb } = r;
     for (let y = 0; y < bh; y++) {
-      const sy = y + by0;
-      if (sy < 0 || sy >= H) continue;
+      const sy2 = y + by0;
+      if (sy2 < 0 || sy2 >= H) continue;
       for (let x = 0; x < bw; x++) {
         const sx = x + bx0;
         if (sx < 0 || sx >= W) continue;
-        const bi = y * bw + x, fi = sy * W + sx;
+        const bi = y * bw + x, fi = sy2 * W + sx;
         if (depth >= zb[fi]) continue;
         let c: number;
         if (mask[bi]) c = col[bi];
         else if ((x > 0 && mask[bi - 1]) || (x < bw - 1 && mask[bi + 1]) || (y > 0 && mask[bi - bw]) || (y < bh - 1 && mask[bi + bw])) c = OUTLINE;
         else continue;
-        buf[fi] = tint && mask[bi] !== 2 ? tint(c, depth, sy) : c;
+        buf[fi] = tint && mask[bi] !== 2 ? tint(c, depth, sy2) : c;
         zb[fi] = depth;
       }
     }

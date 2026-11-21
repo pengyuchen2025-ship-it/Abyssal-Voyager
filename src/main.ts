@@ -114,7 +114,7 @@ function frame(now: number) {
     if (!inside) {
       const tint = (c: number, d: number, y: number) => water.fog(c, d, y);
       subR.draw(r, cam, s, tint);
-      subR.drawMast(r, cam, s, MAST_A, MAST_BASE, game.mast * MAST_LEN, tint);
+      subR.drawMast(r, cam, s, MAST_A, MAST_BASE, game.mast * MAST_LEN, game.mastYaw, tint);
     }
   }, vp.chase, pj.x, pj.y, inside);
   if (!inside) game.trails.draw(r, cam, water, game.time);

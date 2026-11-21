@@ -7,6 +7,7 @@ import { SubPose, modelToWorld } from './sub';
 import { Trails } from './trails';
 import { Particles } from './particles';
 import { smoothstep } from './noise';
+import { scopeLayout } from './periscope';
 
 const TAU = Math.PI * 2;
 const D2R = Math.PI / 180;
@@ -46,8 +47,8 @@ const CLIMB = 22; // 最大升降速度
 const CLEARANCE = 9; // 离海床最近距离
 /** 潜望镜：指挥塔顶（模型坐标）、升到顶时的长度、升降用时 */
 export const MAST_A = 1.2, MAST_BASE = 7.5, MAST_LEN = 9;
-const MAST_UP = 0.45, MAST_DOWN = 0.6;
-const SCOPE_DELAY = 0.35; // 先升潜望镜，再把镜头送上去（占 viewDur 的比例）
+const MAST_UP = 0.75, MAST_DOWN = 0.6;
+const SCOPE_DELAY = 0.45; // 先升潜望镜、镜头转向前方，再把视角送上去（占 viewDur 的比例）
 
 export class Game {
   sub: SubPose = { x: 0, y: 0, h: 60, heading: 0, roll: 0, pitch: 0, prop: 0 };
@@ -73,6 +74,8 @@ export class Game {
   private fromMode: Mode = Mode.Chase;
   /** 潜望镜升起程度 0..1（尾随视角里看得到） */
   mast = 0;
+  /** 潜望镜镜头相对艇首的朝向：升起时先对着尾随镜头（看得到镜片），快到顶时转向前方 */
+  mastYaw = 0;
   /** 上一帧实际用的镜头参数 */
   vp!: ViewParams;
   private chaseHeading = 0;
@@ -130,8 +133,16 @@ export class Game {
     // 视角过渡
     if (this.viewT < 1) this.viewT = Math.min(1, this.viewT + dt / this.viewDur);
     // 潜望镜升降：进潜望镜时先升；回尾随时等镜头退回来再降
-    if (this.viewTarget === Mode.Periscope) this.mast = Math.min(1, this.mast + dt / MAST_UP);
-    else if (this.viewT > 0.8) this.mast = Math.max(0, this.mast - dt / MAST_DOWN);
+    if (this.viewTarget === Mode.Periscope) {
+      this.mast = Math.min(1, this.mast + dt / MAST_UP);
+      // 镜片先对着尾随镜头升起（玩家正好看到镜片），快到顶时转向艇首
+      // 镜头朝向（世界）= 艇首航向 + yaw；对着镜头 = 镜头朝向 + π
+      const face = angDiff(0, this.chaseHeading + Math.PI - s.heading);
+      this.mastYaw = face * (1 - smoothstep(0.5, 1, this.mast));
+    } else {
+      if (this.viewT > 0.8) this.mast = Math.max(0, this.mast - dt / MAST_DOWN);
+      this.mastYaw *= Math.max(0, 1 - dt * 6);
+    }
 
     // ---- 转向 ----
     let turn = inp.turn * TURN;
@@ -257,12 +268,13 @@ export class Game {
     // （横滚在绘制后整幅旋转）。有放大倍率，视野比尾随窄。
     const dist = 60;
     const p = Math.max(0, Math.min(14 * D2R, 6 * D2R - s.pitch * 0.4));
-    const zoom = ((0.8 * Math.min(W, H)) / dist) * (1 - 0.06 * this.nitroFx);
+    const L = scopeLayout(W, H); // 画面中心对准观察窗圆心
+    const zoom = ((1.75 * L.R) / dist) * (1 - 0.06 * this.nitroFx);
     // 眼睛高度：不能伸出水面
     const up = Math.min(MAST_BASE + MAST_LEN - 1, SURFACE_H - 2.5 - (this.camH || s.h));
     void cam;
     return {
-      pitch: p, persp: 1, dist, zoom, ground: Math.sin(p), lift: Math.cos(p), fy: 0.5, heading: s.heading,
+      pitch: p, persp: 1, dist, zoom, ground: Math.sin(p), lift: Math.cos(p), fy: L.cy / H, heading: s.heading,
       ahead: dist * Math.cos(p) + MAST_A, hOff: up - dist * Math.sin(p), fog: 1, caus: 0.55, shafts: 1, objFar: 430, terFar: 850,
       chase: 1, scope: 1, camRate: 10,
     };
