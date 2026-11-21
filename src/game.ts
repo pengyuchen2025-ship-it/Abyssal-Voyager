@@ -7,7 +7,6 @@ import { SubPose, modelToWorld } from './sub';
 import { Trails } from './trails';
 import { Particles } from './particles';
 import { smoothstep } from './noise';
-import { scopeLayout } from './periscope';
 
 const TAU = Math.PI * 2;
 const D2R = Math.PI / 180;
@@ -268,13 +267,12 @@ export class Game {
     // （横滚在绘制后整幅旋转）。有放大倍率，视野比尾随窄。
     const dist = 60;
     const p = Math.max(0, Math.min(14 * D2R, 6 * D2R - s.pitch * 0.4));
-    const L = scopeLayout(W, H); // 画面中心对准观察窗圆心
-    const zoom = ((1.75 * L.R) / dist) * (1 - 0.06 * this.nitroFx);
+    const zoom = ((0.8 * Math.min(W, H)) / dist) * (1 - 0.06 * this.nitroFx);
     // 眼睛高度：不能伸出水面
     const up = Math.min(MAST_BASE + MAST_LEN - 1, SURFACE_H - 2.5 - (this.camH || s.h));
     void cam;
     return {
-      pitch: p, persp: 1, dist, zoom, ground: Math.sin(p), lift: Math.cos(p), fy: L.cy / H, heading: s.heading,
+      pitch: p, persp: 1, dist, zoom, ground: Math.sin(p), lift: Math.cos(p), fy: 0.5, heading: s.heading,
       ahead: dist * Math.cos(p) + MAST_A, hOff: up - dist * Math.sin(p), fog: 1, caus: 0.55, shafts: 1, objFar: 430, terFar: 850,
       chase: 1, scope: 1, camRate: 10,
     };
