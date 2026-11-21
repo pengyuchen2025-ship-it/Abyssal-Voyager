@@ -106,8 +106,8 @@ export class Life {
 
   /** 与潜艇一起绘制；subDepth / drawSub 由外部给出，保证潜艇和海带之间遮挡正确 */
   draw(r: Renderer, cam: Camera, water: Water, t: number, far: number, subDepth: number, drawSub: () => void, chase = 0, subX = 0, subY = 0, inside = false) {
-    // 挡在镜头和潜艇之间的物件做半透明（尾随）；座舱里贴着观察窗的不画、稍远的半透明
-    // 座舱里：贴着观察窗的物件不画，稍远一点的半透明，免得窗外全是巨大的色块
+    // 挡在镜头和潜艇之间的物件做半透明（尾随）；潜望镜里贴着镜头的不画、稍远的半透明
+    // 潜望镜里：贴着镜头的物件不画，稍远一点的半透明，免得窗外全是巨大的色块
     nearFade.dither = inside ? 70 : chase > 0.5 ? subDepth - 6 : subDepth - 2;
     nearFade.hide = inside ? 24 : chase > 0.5 ? 22 : 0;
     nearFade.cx = subX;

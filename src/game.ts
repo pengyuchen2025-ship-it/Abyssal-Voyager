@@ -18,21 +18,21 @@ function angDiff(a: number, b: number) {
   return d;
 }
 
-export const enum Mode { Chase, Cockpit }
-export const MODE_NAMES = ['尾随', '座舱'];
+export const enum Mode { Chase, Periscope }
+export const MODE_NAMES = ['尾随', '潜望镜'];
 
 /** 一个视角的全部镜头参数；切换视角时逐项插值 */
 export interface ViewParams {
   pitch: number; persp: number; dist: number; zoom: number; ground: number; lift: number; fy: number;
   heading: number;
-  ahead: number; // 支点在潜艇前方多远（座舱：眼睛在艇首）
+  ahead: number; // 支点在潜艇前方多远（潜望镜：眼睛在镜头顶端）
   hOff: number; // 支点相对潜艇的高度
   fog: number; caus: number; shafts: number; objFar: number; terFar: number;
   chase: number; // 1 = 镜头在艇身后方或艇内（尾随式操控、近处物件半透明）
-  cock: number; // 座舱程度（仪表台滑入、隐藏潜艇本体）
+  scope: number; // 潜望镜程度（目镜圆框收拢、隐藏潜艇本体）
   camRate: number; // 镜头高度跟随潜艇的快慢
 }
-const VP_KEYS: (keyof ViewParams)[] = ['pitch', 'persp', 'dist', 'zoom', 'ground', 'lift', 'fy', 'ahead', 'hOff', 'fog', 'caus', 'shafts', 'objFar', 'terFar', 'chase', 'cock', 'camRate'];
+const VP_KEYS: (keyof ViewParams)[] = ['pitch', 'persp', 'dist', 'zoom', 'ground', 'lift', 'fy', 'ahead', 'hOff', 'fog', 'caus', 'shafts', 'objFar', 'terFar', 'chase', 'scope', 'camRate'];
 const CHASE_PITCH = 13 * D2R;
 const CHASE_DIST = 84;
 
@@ -44,6 +44,10 @@ const NITRO_FILL = 0.11; // 每秒回复（约 9 秒回满）
 const TURN = 1.55; // 最大转向速度（弧度/秒）
 const CLIMB = 22; // 最大升降速度
 const CLEARANCE = 9; // 离海床最近距离
+/** 潜望镜：指挥塔顶（模型坐标）、升到顶时的长度、升降用时 */
+export const MAST_A = 1.2, MAST_BASE = 7.5, MAST_LEN = 9;
+const MAST_UP = 0.45, MAST_DOWN = 0.6;
+const SCOPE_DELAY = 0.35; // 先升潜望镜，再把镜头送上去（占 viewDur 的比例）
 
 export class Game {
   sub: SubPose = { x: 0, y: 0, h: 60, heading: 0, roll: 0, pitch: 0, prop: 0 };
@@ -66,6 +70,9 @@ export class Game {
   private viewFrom: ViewParams | null = null;
   private viewT = 1;
   viewDur = 1.4;
+  private fromMode: Mode = Mode.Chase;
+  /** 潜望镜升起程度 0..1（尾随视角里看得到） */
+  mast = 0;
   /** 上一帧实际用的镜头参数 */
   vp!: ViewParams;
   private chaseHeading = 0;
@@ -85,27 +92,30 @@ export class Game {
     this.region = world.regionAt(x, y);
   }
 
-  /** 在尾随和座舱之间切换 */
+  /** 在尾随和潜望镜之间切换 */
   toggleView() {
-    this.selectView(this.viewTarget === Mode.Chase ? Mode.Cockpit : Mode.Chase);
+    this.selectView(this.viewTarget === Mode.Chase ? Mode.Periscope : Mode.Chase);
   }
 
   selectView(m: Mode) {
     if (m === this.viewTarget) return;
     if (this.vp) this.viewFrom = { ...this.vp };
+    this.fromMode = this.viewTarget;
     this.viewTarget = m;
-    this.viewT = this.vp ? 0 : 1;
+    // 进潜望镜：潜望镜还没升起来时，镜头先等它升起
+    this.viewT = !this.vp ? 1 : m === Mode.Periscope ? -SCOPE_DELAY * (1 - this.mast) : 0;
   }
 
   setView(m: Mode) {
     this.viewTarget = m;
     this.viewT = 1;
+    this.mast = m === Mode.Periscope ? 1 : 0;
     this.chaseHeading = this.sub.heading;
   }
 
   /** 视角过渡进度（缓动后），没在切换时为 1 */
   eased() {
-    return smoothstep(0, 1, this.viewT);
+    return smoothstep(0, 1, Math.max(0, this.viewT));
   }
 
   /** subScreen：潜艇上一帧在屏幕上的位置（给指针转向用） */
@@ -119,12 +129,15 @@ export class Game {
 
     // 视角过渡
     if (this.viewT < 1) this.viewT = Math.min(1, this.viewT + dt / this.viewDur);
+    // 潜望镜升降：进潜望镜时先升；回尾随时等镜头退回来再降
+    if (this.viewTarget === Mode.Periscope) this.mast = Math.min(1, this.mast + dt / MAST_UP);
+    else if (this.viewT > 0.8) this.mast = Math.max(0, this.mast - dt / MAST_DOWN);
 
     // ---- 转向 ----
     let turn = inp.turn * TURN;
     let climb = inp.rise;
-    // 座舱里以准星（画面中心）为参照，尾随时以潜艇为参照
-    const ref = this.viewTarget === Mode.Cockpit ? { x: cam.cx, y: cam.cy, k: 1, visible: true } : subScreen;
+    // 潜望镜里以十字线（画面中心）为参照，尾随时以潜艇为参照
+    const ref = this.viewTarget === Mode.Periscope ? { x: cam.cx, y: cam.cy, k: 1, visible: true } : subScreen;
     if (inp.px !== null && inp.py !== null && ref.visible) {
       const dx = inp.px - ref.x, dy = inp.py - ref.y;
       // 指针在参照点左右决定转向，上下决定升降（往上指 = 上浮）
@@ -237,18 +250,21 @@ export class Game {
       const cp = CHASE_PITCH + this.camLift;
       return {
         pitch: cp, persp: 1, dist: CHASE_DIST, zoom, ground: Math.sin(cp), lift: Math.cos(cp), fy: 0.66, heading: this.chaseHeading,
-        ahead: 0, hOff: 3, fog: 1, caus: 0.55, shafts: 1, objFar: 430, terFar: 850, chase: 1, cock: 0, camRate: 3,
+        ahead: 0, hOff: 3, fog: 1, caus: 0.55, shafts: 1, objFar: 430, terFar: 850, chase: 1, scope: 0, camRate: 3,
       };
     }
-    // 座舱：眼睛在艇首观察窗后面，跟着艇身俯仰（横滚在绘制后整幅旋转）
+    // 潜望镜：眼睛在升起的镜头顶端，比艇身高出一截；镜头自带稳定，只跟一点艇身俯仰
+    // （横滚在绘制后整幅旋转）。有放大倍率，视野比尾随窄。
     const dist = 60;
-    const p = Math.max(0, Math.min(16 * D2R, 5 * D2R - s.pitch * 0.7));
-    const zoom = ((0.62 * Math.min(W, H * 1.45)) / dist) * (1 - 0.08 * this.nitroFx);
+    const p = Math.max(0, Math.min(14 * D2R, 6 * D2R - s.pitch * 0.4));
+    const zoom = ((0.8 * Math.min(W, H)) / dist) * (1 - 0.06 * this.nitroFx);
+    // 眼睛高度：不能伸出水面
+    const up = Math.min(MAST_BASE + MAST_LEN - 1, SURFACE_H - 2.5 - (this.camH || s.h));
     void cam;
     return {
-      pitch: p, persp: 1, dist, zoom, ground: Math.sin(p), lift: Math.cos(p), fy: 0.4, heading: s.heading,
-      ahead: dist * Math.cos(p) + 10, hOff: 2 - dist * Math.sin(p), fog: 1, caus: 0.55, shafts: 1, objFar: 430, terFar: 850,
-      chase: 1, cock: 1, camRate: 14,
+      pitch: p, persp: 1, dist, zoom, ground: Math.sin(p), lift: Math.cos(p), fy: 0.5, heading: s.heading,
+      ahead: dist * Math.cos(p) + MAST_A, hOff: up - dist * Math.sin(p), fog: 1, caus: 0.55, shafts: 1, objFar: 430, terFar: 850,
+      chase: 1, scope: 1, camRate: 10,
     };
   }
 
@@ -270,7 +286,9 @@ export class Game {
 
     const to = this.params(this.viewTarget, W, H, cam);
     let vp = to;
-    if (this.viewT < 1 && this.viewFrom) {
+    // 等潜望镜升起的这段时间，镜头还按原视角实时跟着
+    if (this.viewT <= 0) vp = this.viewFrom = this.params(this.fromMode, W, H, cam);
+    else if (this.viewT < 1 && this.viewFrom) {
       const e = this.eased(), a = this.viewFrom;
       vp = { ...to };
       for (const key of VP_KEYS) vp[key] = a[key] + (to[key] - a[key]) * e;

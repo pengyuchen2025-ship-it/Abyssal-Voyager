@@ -7,8 +7,8 @@ import { renderTerrain } from './terrain';
 import { Life } from './objects';
 import { Particles } from './particles';
 import { Input } from './input';
-import { Game, Mode, MODE_NAMES } from './game';
-import { Cockpit } from './cockpit';
+import { Game, Mode, MODE_NAMES, MAST_A, MAST_BASE, MAST_LEN } from './game';
+import { Periscope } from './periscope';
 import { SURFACE_H } from './world';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
@@ -31,8 +31,9 @@ const parts = new Particles();
 const subR = new SubRenderer(new SubModel());
 const cam = new Camera();
 const game = new Game(world, parts);
-const cockpit = new Cockpit();
-if (q.get('view') === 'cockpit') game.setView(Mode.Cockpit);
+const periscope = new Periscope();
+// ?view=periscope 直接进潜望镜（旧的 ?view=cockpit 也认）
+if (q.get('view') === 'periscope' || q.get('view') === 'cockpit') game.setView(Mode.Periscope);
 
 const input = new Input(stage, (cx, cy) => {
   const rc = canvas.getBoundingClientRect();
@@ -104,27 +105,30 @@ function frame(now: number) {
   renderTerrain(r, cam, world, water, { far: vp.terFar, caustics: vp.caus });
   water.renderSurface(r, cam);
   const s = game.sub;
-  const inside = vp.cock > 0.5; // 在艇里面：不画潜艇本体、影子和翼尖水流线
+  const inside = vp.scope > 0.75; // 从潜望镜里看：不画潜艇本体、影子和翼尖水流线
   if (!inside) life.drawShadow(r, cam, s.x, s.y, s.h, s.heading);
   const pj = { x: 0, y: 0, depth: 0, k: 0 };
   cam.project(s.x, s.y, s.h, pj);
   if (inside) subR.screen.visible = false;
   life.draw(r, cam, water, game.time, vp.objFar, inside ? 0 : pj.depth, () => {
-    if (!inside) subR.draw(r, cam, s, (c, d, y) => water.fog(c, d, y));
+    if (!inside) {
+      const tint = (c: number, d: number, y: number) => water.fog(c, d, y);
+      subR.draw(r, cam, s, tint);
+      subR.drawMast(r, cam, s, MAST_A, MAST_BASE, game.mast * MAST_LEN, tint);
+    }
   }, vp.chase, pj.x, pj.y, inside);
   if (!inside) game.trails.draw(r, cam, water, game.time);
   const sp = game.speed / 32;
   parts.draw(r, cam, water, game.time, -game.vx, -game.vy, Math.max(0, sp - 1.15) * 0.07 + game.nitroFx * 0.05);
   water.lightShafts(r, cam, vp.shafts);
-  // 座舱：窗外的世界随艇身横滚旋转，然后画舱内
-  if (vp.cock > 0.01) {
-    r.rotate(s.roll * vp.cock, cam.cx, cam.cy, water.rowPacked);
-    cockpit.draw(r, {
-      t: game.time, heading: s.heading, roll: s.roll, pitch: s.pitch,
-      depth: (SURFACE_H - s.h) * 0.6, depthFrac: (SURFACE_H - s.h) / SURFACE_H, speedKn: game.speed * 0.5, speedFrac: game.speed / (32 * 2.8),
-      nitro: game.nitro, nitroOn: game.nitroOn, boosting: game.boosting, clearance: s.h - world.heightSmooth(s.x, s.y),
+  // 潜望镜：镜里的世界随艇身横滚旋转，然后画目镜圆框和分划线
+  if (vp.scope > 0.01) {
+    r.rotate(s.roll * vp.scope, cam.cx, cam.cy, water.rowPacked);
+    periscope.draw(r, {
+      t: game.time, heading: s.heading, depth: (SURFACE_H - s.h) * 0.6, speedKn: game.speed * 0.5,
+      nitro: game.nitro, nitroOn: game.nitroOn, clearance: s.h - world.heightSmooth(s.x, s.y),
       subX: s.x, subY: s.y, subH: s.h,
-    }, world, vp.cock);
+    }, world, vp.scope);
   }
   if (q.has('pre')) preCopy = r.buf.slice();
   r.present();
@@ -134,7 +138,7 @@ function frame(now: number) {
   depthEl.textContent = String(depth).padStart(3, '0');
   speedEl.textContent = String(Math.round(game.speed * 0.5)).padStart(2, '0');
   viewBtn.textContent = MODE_NAMES[game.viewTarget];
-  document.body.classList.toggle('cockpit', game.viewTarget === Mode.Cockpit);
+  document.body.classList.toggle('scope', game.viewTarget === Mode.Periscope);
   nitroBar.style.width = (game.nitro * 100).toFixed(1) + '%';
   nitroBox.classList.toggle('on', game.nitroOn);
   nitroBox.classList.toggle('ready', !game.nitroOn && game.nitro >= 0.25);

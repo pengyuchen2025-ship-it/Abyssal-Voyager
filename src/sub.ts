@@ -266,6 +266,85 @@ export class SubRenderer {
       }
     }
   }
+
+  private mastCol = new Uint32Array(0);
+  private mastMask = new Uint8Array(0);
+  private mp = { x: 0, y: 0, h: 0 };
+  private mpj: Projected = { x: 0, y: 0, depth: 0, k: 0 };
+
+  /**
+   * 潜望镜：从指挥塔顶（模型坐标 a = ma, h = base）竖直伸出 ext 长的镜管，顶上一个带镜片的镜头。
+   * 沿镜管取样、投影，逐段画圆；和艇身一样加 1 像素深色描边。画在艇身之后、深度略靠前。
+   */
+  drawMast(r: Renderer, cam: Camera, s: SubPose, ma: number, base: number, ext: number, tint: PixelTint | null) {
+    if (ext <= 0.02 || !this.screen.visible) return;
+    const k = this.screen.k, depth = this.screen.depth - 0.5;
+    const top = base + ext;
+    const p = this.mp, q = this.mpj;
+    // 取样点：镜管（半径 0.55）、镜头（半径 0.9，高 1.8）、镜片（前方 0.8，自发光）
+    const pts: [number, number, number, number][] = []; // a, h, 半径, 种类 0 镜管 1 镜头 2 镜片
+    for (let h = base - 0.6; h <= top - 1.6; h += 0.3) pts.push([ma, h, 0.55, 0]);
+    const hb = Math.max(base - 0.3, top - 1.8);
+    for (let h = hb; h <= top; h += 0.3) pts.push([ma, h, 0.9, 1]);
+    for (let h = hb; h <= top; h += 0.3) pts.push([ma + 0.5, h, 0.8, 1]);
+    pts.push([ma + 1.1, top - 0.9, 0.5, 2]);
+    const scr: number[] = [];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [a, h, rad, kind] of pts) {
+      modelToWorld(s, a, 0, h, p);
+      if (!cam.project(p.x, p.y, p.h, q)) return;
+      const rr = Math.max(0.6, rad * k);
+      scr.push(q.x, q.y, rr, kind);
+      x0 = Math.min(x0, q.x - rr); x1 = Math.max(x1, q.x + rr);
+      y0 = Math.min(y0, q.y - rr); y1 = Math.max(y1, q.y + rr);
+    }
+    const bx0 = Math.floor(x0) - 1, by0 = Math.floor(y0) - 1;
+    const bw = Math.ceil(x1) + 2 - bx0, bh = Math.ceil(y1) + 2 - by0;
+    if (bw * bh > 40000) return;
+    if (this.mastCol.length < bw * bh) {
+      this.mastCol = new Uint32Array(bw * bh * 2);
+      this.mastMask = new Uint8Array(bw * bh * 2);
+    }
+    const col = this.mastCol, mask = this.mastMask;
+    mask.fill(0, 0, bw * bh);
+    const steel = [pack(70, 80, 88), pack(118, 130, 138), pack(170, 182, 188), pack(214, 222, 224)];
+    const glass = pack(142, 244, 243);
+    for (let n = 0; n < scr.length; n += 4) {
+      const cx = scr[n] - bx0, cy = scr[n + 1] - by0, rr = scr[n + 2], kind = scr[n + 3];
+      for (let y = Math.floor(cy - rr); y <= Math.ceil(cy + rr); y++)
+        for (let x = Math.floor(cx - rr); x <= Math.ceil(cx + rr); x++) {
+          const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+          if (dx * dx + dy * dy > rr * rr || x < 0 || y < 0 || x >= bw || y >= bh) continue;
+          const i = y * bw + x;
+          if (kind === 2) { col[i] = glass; mask[i] = 2; continue; }
+          if (mask[i] === 2) continue;
+          // 圆柱的明暗：左亮右暗，镜头顶面更亮
+          const u = dx / rr;
+          let l = u < -0.35 ? 2 : u < 0.4 ? 1 : 0;
+          if (u < -0.1 && u > -0.6 && rr > 1.4) l = 3;
+          if (kind === 1 && dy < -rr * 0.4) l = Math.min(3, l + 1);
+          col[i] = steel[l];
+          mask[i] = 1;
+        }
+    }
+    const { W, H, buf, z: zb } = r;
+    for (let y = 0; y < bh; y++) {
+      const sy = y + by0;
+      if (sy < 0 || sy >= H) continue;
+      for (let x = 0; x < bw; x++) {
+        const sx = x + bx0;
+        if (sx < 0 || sx >= W) continue;
+        const bi = y * bw + x, fi = sy * W + sx;
+        if (depth >= zb[fi]) continue;
+        let c: number;
+        if (mask[bi]) c = col[bi];
+        else if ((x > 0 && mask[bi - 1]) || (x < bw - 1 && mask[bi + 1]) || (y > 0 && mask[bi - bw]) || (y < bh - 1 && mask[bi + bw])) c = OUTLINE;
+        else continue;
+        buf[fi] = tint && mask[bi] !== 2 ? tint(c, depth, sy) : c;
+        zb[fi] = depth;
+      }
+    }
+  }
 }
 
 /** 模型坐标（前后 a、左右 c、上下 h，相对体素体中心）→ 世界坐标（与绘制时的逆变换互逆） */

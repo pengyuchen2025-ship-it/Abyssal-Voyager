@@ -63,7 +63,7 @@ export class Renderer {
   private qLevels = -1;
 
   private rotBuf = new Uint32Array(0);
-  /** 把整幅画面绕 (cx, cy) 旋转 angle（座舱里随艇身横滚），出界的像素用该行的雾色 */
+  /** 把整幅画面绕 (cx, cy) 旋转 angle（潜望镜里随艇身横滚），出界的像素用该行的雾色 */
   rotate(angle: number, cx: number, cy: number, rowFill: Uint32Array) {
     if (Math.abs(angle) < 0.004) return;
     const { W, H, buf } = this;
