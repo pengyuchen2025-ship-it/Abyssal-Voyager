@@ -10,6 +10,7 @@ import { Input } from './input';
 import { Game, Mode, MODE_NAMES, MAST_A, MAST_BASE, MAST_LEN } from './game';
 import { Periscope } from './periscope';
 import { SURFACE_H } from './world';
+import { TitleArt } from './title';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const stage = document.getElementById('stage') as HTMLDivElement;
@@ -62,6 +63,17 @@ document.body.classList.toggle('touch', coarse || q.has('touch'));
 type State = 'title' | 'play' | 'paused';
 let state: State = 'title';
 const titleEl = $('title');
+const art = new TitleArt($('t-inner'), $('t-art') as HTMLCanvasElement, {
+  header: $('t-header'), name: $('t-name'), port: $('t-port'), plaque: $('t-plaque'), base: $('t-base'), btn: $('t-btn') as HTMLCanvasElement,
+});
+/** 控制台像素画和游戏画面用同样大小的像素 */
+const paintArt = () => {
+  if (state !== 'play') requestAnimationFrame(() => art.paint(r.scale));
+};
+addEventListener('resize', paintArt);
+document.fonts?.ready.then(paintArt);
+/** 镜头对准舷窗的程度：开始 / 暂停界面为 1，游戏中为 0，切换时平滑过渡 */
+let focus = 1;
 function setState(s: State) {
   state = s;
   document.body.classList.toggle('title', s === 'title');
@@ -71,7 +83,10 @@ function setState(s: State) {
   // 开始 / 继续时丢掉按下的那个键，免得空格同时切了视角
   input.clear();
   if (s === 'play') ($('btn-start') as HTMLButtonElement).blur();
-  else ($('btn-start') as HTMLButtonElement).focus({ preventScroll: true });
+  else {
+    ($('btn-start') as HTMLButtonElement).focus({ preventScroll: true });
+    paintArt();
+  }
 }
 // 调试参数直接进游戏
 setState(q.has('play') || q.has('view') ? 'play' : 'title');
@@ -136,6 +151,17 @@ function frame(now: number) {
     game.update(dt, input, cam, subR.screen);
   }
   game.applyCamera(cam, r.W, r.H, state === 'paused' ? 0 : dt);
+  // 开始 / 暂停界面：镜头挪到舷窗中间，并缩小一点让潜艇整个装进舷窗
+  focus += ((state === 'play' ? 0 : 1) - focus) * Math.min(1, dt * 5 + (state === 'paused' ? 1 : 0));
+  if (focus > 0.001) {
+    const h = art.hole(), rc = canvas.getBoundingClientRect();
+    const fx = (h.x - rc.left) / rc.width, fy = (h.y - rc.top) / rc.height;
+    const fit = Math.min(1, (h.r * 2.6) / Math.min(rc.width, rc.height));
+    cam.fx = 0.5 + (fx - 0.5) * focus;
+    cam.fy += (fy - cam.fy) * focus;
+    cam.zoom *= 1 + (fit - 1) * focus;
+    cam.update(r.W, r.H);
+  } else cam.fx = 0.5;
   const vp = game.vp;
   water.fogAmount = vp.fog;
   water.update(cam, r.H, game.region, game.time);
