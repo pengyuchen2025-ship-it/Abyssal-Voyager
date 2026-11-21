@@ -78,90 +78,104 @@
     #btn-pause { position: fixed; display: none; right: calc(12px + env(safe-area-inset-right, 0px)); top: calc(56px + env(safe-area-inset-top, 0px)); padding: 0 10px; font: 13px/1.8 var(--cjk); color: var(--dim); }
     body.touch #btn-pause { display: block; }
 
-    /* ---- 开始界面 / 暂停界面：潜艇控制台（背后的像素画由 title.ts 按元素位置画） ---- */
-    #title { position: fixed; inset: 0; overflow-y: auto; overflow-x: hidden; touch-action: pan-y; transition: opacity 0.5s; }
-    #title.hide { opacity: 0; pointer-events: none; }
-    .t-inner { position: relative; min-height: 100%; box-sizing: border-box; display: grid; grid-template-rows: auto 1fr;
-      padding: 0 max(18px, 4vw) 22px; }
-    #t-art { position: absolute; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; z-index: 0; }
-    .t-inner > * { position: relative; z-index: 1; }
-    body:not(.title) .tonly { display: none; }
-    body.title .ponly { display: none; }
-    body.title .hud, body.title #btn-view, body.title #touch, body.title #btn-pause, body.paused .hud, body.paused #btn-view, body.paused #touch, body.paused #btn-pause { opacity: 0; pointer-events: none; }
-
-    /* 顶部横梁：两边指示灯，中间铜铭牌 */
-    #t-header { display: flex; align-items: center; justify-content: center; gap: 22px; padding: 14px 0 16px; }
-    .lamps { display: flex; gap: 12px; }
-    .lamp { width: calc(var(--u) * 5); height: calc(var(--u) * 5); background: #3a2a10; box-shadow: 0 0 0 var(--u) #142320, inset calc(var(--u) * -1) calc(var(--u) * -1) 0 rgba(0, 0, 0, 0.35); }
-    .lamp.g { --on: #7cf08a; } .lamp.a { --on: #ffc44a; } .lamp.r { --on: #ff5a46; }
-    .lamp { animation: lamp 1.6s steps(1) infinite; }
-    .lamp:nth-child(2) { animation-delay: -0.5s; animation-duration: 2.3s; } .lamp:nth-child(3) { animation-delay: -1.1s; animation-duration: 1.1s; }
-    @keyframes lamp { 0%, 55% { background: var(--on); box-shadow: 0 0 0 var(--u) #142320, inset calc(var(--u) * -1) calc(var(--u) * -1) 0 rgba(0, 0, 0, 0.25), 0 0 12px var(--on); } 56%, 100% { background: #2c3a36; } }
-    #t-name { padding: 12px 34px 12px; text-align: center; }
-    #t-name h1 { margin: 0; font: clamp(40px, 6.4vw, 76px)/1 var(--title); color: #4a2a08; letter-spacing: 0.12em; text-shadow: 0 var(--u) 0 #f8d684, 0 calc(var(--u) * -1) 0 #9c6826; }
-    #t-name .en { margin: 8px 0 0; font: clamp(11px, 1.2vw, 14px)/1 var(--px); color: #6a4410; letter-spacing: 0.45em; text-shadow: 0 1px 0 #f8d684; }
-
-    /* 中间：舷窗 + 操作铭牌 */
-    #t-main { display: flex; align-items: center; justify-content: center; gap: clamp(28px, 5vw, 72px); padding: 18px 0; }
-    #t-port { flex: none; width: clamp(180px, min(40vw, calc(100vh - 290px)), 520px); aspect-ratio: 1; border-radius: 50%; }
-    #t-side { flex: 0 1 440px; display: flex; flex-direction: column; gap: 22px; }
-    #t-plaque { padding: 18px 24px 20px; color: #3b2408; }
-    #t-plaque h2 { margin: 0 0 10px; font: 20px/1.3 var(--title); color: #4a2a08; letter-spacing: 0.3em; text-shadow: 0 1px 0 #f8d684; }
-    #t-plaque .paused-label { margin: 0 0 8px; font: 16px/1.3 var(--title); color: #9a1a10; letter-spacing: 0.3em; }
-    #t-plaque ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 6px; align-items: center; }
-    #t-plaque li { display: contents; }
-    #t-plaque .k { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
-    #t-plaque .d { font-size: 13px; font-weight: 600; text-shadow: 0 1px 0 rgba(255, 236, 180, 0.6); }
-    #t-plaque .d em { font-style: normal; color: #9a1a10; }
-    #t-plaque kbd { border-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6' shape-rendering='crispEdges'%3E%3Cpath fill='%231f2f2c' d='M1 0h4v1h1v4h-1v1h-4v-1h-1v-4h1z'/%3E%3Cpath fill='%238fa5a0' d='M1 1h4v4h-4z'/%3E%3Cpath fill='%23ffffff' d='M1 1h4v1h-3v3h-1z'/%3E%3Cpath fill='%23d6e0dc' fill-opacity='1' d='M2 2h2v2h-2z'/%3E%3C/svg%3E") 2 fill / calc(var(--u) * 2) stretch; color: #1f2f2c; }
-    #t-plaque .t-list { display: none; }
-    body.touch #t-plaque .m-list { display: none; }
-    body.touch #t-plaque .t-list { display: grid; }
-
-    /* 底部：警示底座 + 红色启动按钮 */
-    #t-foot { display: flex; align-items: center; gap: 18px; }
-    #t-base { flex: none; }
-    #t-base { padding: calc(var(--u) * 7); }
-    #btn-start { position: relative; display: flex; align-items: center; justify-content: center; width: clamp(84px, 9vw, 108px); aspect-ratio: 1; transition: transform 0.06s; }
-    #btn-start canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
-    #btn-start span { position: relative; margin-top: -8%; font: clamp(20px, 2.4vw, 26px)/1 var(--title); color: #fff2e6; letter-spacing: 0.12em;
-      text-shadow: 0 2px 0 #6a0e0a; }
-    #btn-start:hover canvas, #btn-start:focus-visible canvas { filter: brightness(1.12); }
-    #btn-start:focus-visible { outline: none; }
-    #btn-start:active { transform: translateY(var(--u)); }
-    .t-hint { margin: 0; font: 13px/1.8 var(--cjk); color: #d8f0e8; text-shadow: 1px 1px 0 #142320; }
-    .t-hint .blink { animation: blink 1.2s steps(2) infinite; }
-    body.touch .t-hint .m-only { display: none; }
-    @keyframes blink { 50% { opacity: 0.35; } }
-    @media (max-width: 760px) {
-      #t-header { gap: 12px; padding: 10px 0 12px; } .lamps { gap: 8px; } .lamps .lamp:nth-child(3) { display: none; }
-      #t-name { padding: 10px 18px; }
-      #t-main { flex-direction: column; gap: 18px; padding: 12px 0; }
-      #t-port { width: clamp(140px, min(64vw, 28vh), 360px); }
-      #t-side { flex: none; width: 100%; max-width: 440px; gap: 18px; }
-      #t-plaque { padding: 14px 16px 16px; }
-      #t-foot { justify-content: center; }
-    }
-    @media (max-width: 760px) and (max-height: 720px) {
-      #t-name h1 { font-size: 34px; } #t-header { padding: 8px 0 10px; }
-      #t-main { gap: 12px; padding: 8px 0; } #t-side { gap: 12px; }
-      #t-port { width: clamp(130px, min(60vw, 25vh), 300px); }
-      #t-plaque ul { row-gap: 3px; } #btn-start { width: 80px; }
-    }
-    /* 矮的横屏（手机横着拿）：舷窗、铭牌、按钮排成一行 */
-    @media (max-height: 700px) and (min-width: 761px) {
-      #t-header { padding: 8px 0 10px; } #t-name { padding: 8px 26px 9px; } #t-name h1 { font-size: clamp(30px, 7vh, 46px); } #t-name .en { margin-top: 5px; font-size: 10px; }
-      #t-main { padding: 10px 0; gap: 26px; }
-      #t-port { width: clamp(140px, min(34vw, calc(100vh - 170px)), 440px); }
-      #t-side { flex-direction: row; align-items: center; flex-basis: auto; gap: 16px; }
-      #t-plaque { padding: 16px 20px 16px; } #t-plaque h2 { font-size: 16px; margin-bottom: 6px; } #t-plaque ul { row-gap: 3px; }
-      #t-foot { flex-direction: column; } .t-hint { display: none; }
-    }
+    /* ---- 舰桥（开始界面 / 菜单）：像素画在游戏画布里，这里只放文字和按钮，位置由 main.ts 按布局算好 ---- */
+    #bridge-ui { position: absolute; pointer-events: none; overflow: hidden; --s: 3; transition: opacity 0.35s; }
+    #bridge-ui .st { position: absolute; left: 0; top: 0; width: 100%; height: 100%; will-change: transform; }
+    #bridge-ui .st > * { position: absolute; box-sizing: border-box; }
+    #bridge-ui .plate { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #4a2c30; }
+    #bridge-ui .plate h1 { margin: 0; font: calc(var(--ph) * var(--s) * 0.52px)/1 var(--title); letter-spacing: 0.14em; text-shadow: 0 1px 0 #fff8dc; }
+    #bridge-ui .plate small { margin-top: calc(var(--s) * 1px); font: calc(var(--ph) * var(--s) * 0.17px)/1 var(--px); letter-spacing: 0.4em; color: #7a5650; }
+    #bridge-ui .plate.one h1 { font-size: calc(var(--ph) * var(--s) * 0.6px); }
+    .scr { pointer-events: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #3e2766; }
+    .scr b { font: calc(var(--sh) * var(--s) * 0.42px)/1 var(--title); letter-spacing: 0.16em; font-weight: normal; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6); }
+    .scr small { margin-top: calc(var(--s) * 1.5px); font: calc(var(--s) * 4px)/1 var(--px); letter-spacing: 0.2em; color: #6a54a0; }
+    .scr:hover, .scr:focus-visible { background: rgba(255, 255, 255, 0.22); outline: none; }
+    .scr:hover b, .scr:focus-visible b { color: #6a1a8a; }
+    .scr:active { transform: translateY(calc(var(--s) * 1px)); }
+    #btn-start b::before { content: '▶ '; font-size: 0.7em; vertical-align: 0.12em; }
+    body.touch .scr small { display: none; }
+    /* 升级台的显像管 */
+    #bridge-ui .crt { padding: calc(var(--s) * 6px) calc(var(--s) * 8px); color: #7cf4aa; font: calc(var(--s) * 6.5px)/1.5 var(--cjk); text-shadow: 0 0 calc(var(--s) * 2px) rgba(120, 244, 170, 0.55); overflow: hidden; }
+    .crt .head { font: calc(var(--s) * 5px)/1.6 var(--px); letter-spacing: 0.25em; opacity: 0.8; }
+    .crt ul { list-style: none; margin: calc(var(--s) * 3px) 0 0; padding: 0; display: grid; grid-template-columns: auto 1fr; column-gap: calc(var(--s) * 6px); row-gap: calc(var(--s) * 2.5px); align-items: center; opacity: 0.55; }
+    .crt li { display: contents; }
+    .crt .pips { display: flex; gap: calc(var(--s) * 1.5px); }
+    .crt .pips i { width: calc(var(--s) * 5px); height: calc(var(--s) * 3px); border: calc(var(--s) * 0.5px) solid #7cf4aa; box-sizing: border-box; }
+    .crt .pips i:first-child { background: #7cf4aa; }
+    /* 机库卡片 */
+    #bridge-ui .card { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding-bottom: calc(var(--s) * 4px); color: #e6dcff; font: calc(var(--s) * 6px)/1.3 var(--cjk); text-shadow: 0 1px 0 #2a1e48; }
+    .card b { font: calc(var(--s) * 6px)/1.2 var(--px); letter-spacing: 0.2em; }
+    .card small { font-size: calc(var(--s) * 5px); color: #b8a8e8; }
+    .hg-title { color: #f4eeff; font: calc(var(--s) * 5px)/1 var(--px); letter-spacing: 0.3em; display: flex; align-items: center; justify-content: center; }
+    /* 「即将开放」印章 */
+    #bridge-ui .stamp { display: flex; align-items: center; justify-content: center; }
+    .stamp span { padding: calc(var(--s) * 2px) calc(var(--s) * 7px); border: calc(var(--s) * 1.5px) solid #e2483a; color: #ff5a46; background: rgba(40, 10, 10, 0.25);
+      font: calc(var(--s) * 11px)/1.2 var(--title); letter-spacing: 0.25em; transform: rotate(-8deg); text-shadow: 0 0 calc(var(--s) * 2px) rgba(0, 0, 0, 0.4); }
+    /* 左右切换箭头 */
+    .nav { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); z-index: 5; padding: 6px 10px; display: flex; align-items: center; gap: 8px;
+      font: 13px/1.5 var(--cjk); color: var(--cream); transition: opacity 0.35s; }
+    #nav-l { left: calc(8px + env(safe-area-inset-left, 0px)); }
+    #nav-r { right: calc(8px + env(safe-area-inset-right, 0px)); }
+    .nav .arr { font-size: 15px; color: var(--cyan); }
+    .nav:hover .arr, .nav:focus-visible .arr { color: var(--cream); }
+    .nav:focus-visible { outline: none; }
+    body.touch .nav kbd { display: none; }
+    /* 竖屏：箭头放到下面两个角（压在座椅上） */
+    @media (orientation: portrait) { .nav { top: auto; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); } }
+    @media (max-width: 560px) { #nav-l-name, #nav-r-name { display: none; } .nav { padding: 10px 12px; } .nav .arr { font-size: 18px; } }
+    /* 操作指导 */
+    #guide { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: rgba(10, 8, 16, 0.55); padding: 16px; box-sizing: border-box; transition: opacity 0.25s; }
+    #guide.hide { opacity: 0; pointer-events: none; }
+    #guide .sheet { width: min(470px, 100%); max-height: 100%; overflow-y: auto; padding: 14px 20px 16px; color: #3b2a1c; border-image: var(--frame-key) 2 fill / calc(var(--u) * 2) stretch; border-style: solid; border-width: calc(var(--u) * 2); }
+    #guide h2 { margin: 0 0 10px; font: 22px/1.3 var(--title); letter-spacing: 0.3em; color: #4a2c30; }
+    #guide ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 14px; row-gap: 6px; align-items: center; }
+    #guide li { display: contents; }
+    #guide .k { display: flex; gap: 4px; flex-wrap: wrap; }
+    #guide .d { font-size: 13px; font-weight: 600; }
+    #guide .d em { font-style: normal; color: #b0361e; }
+    #guide kbd { border-image: var(--frame) 2 fill / calc(var(--u) * 2) stretch; color: var(--cream); }
+    #guide .t-list { display: none; }
+    body.touch #guide .m-list { display: none; }
+    body.touch #guide .t-list { display: grid; }
+    #guide .close { margin-top: 14px; padding: 2px 16px; font: 15px/1.6 var(--title); color: var(--cream); letter-spacing: 0.2em; }
+    /* 舰桥上：藏起游戏 HUD；游戏中：藏起舰桥文字和箭头 */
+    body.bridge .hud, body.bridge #btn-view, body.bridge #touch, body.bridge #btn-pause { opacity: 0; pointer-events: none; }
+    body:not(.bridge) #bridge-ui, body:not(.bridge) .nav { opacity: 0; pointer-events: none; }
+    body:not(.bridge) #bridge-ui * { pointer-events: none !important; }
     @media (max-width: 520px) { #hud { min-width: 140px; padding: 2px 8px 4px; } #hud .num { font-size: 18px; } #toast { font-size: 18px; } }
   </style>
 </head>
-<body class="title">
-  <div id="stage"><canvas id="view"></canvas></div>
+<body class="bridge">
+  <div id="stage"><canvas id="view"></canvas>
+    <div id="bridge-ui">
+      <div class="st" data-st="0">
+        <div class="plate" data-r="plate"><h1>深流潜航</h1><small>ABYSSAL VOYAGER</small></div>
+        <button class="scr" id="btn-start" data-ui data-r="screenL"><b>开始潜航</b><small>ENTER</small></button>
+        <button class="scr" id="btn-guide" data-ui data-r="screenR"><b>操作指导</b><small>H</small></button>
+      </div>
+      <div class="st" data-st="1">
+        <div class="plate one" data-r="plate"><h1>潜艇升级</h1></div>
+        <div class="crt" data-r="upScreen">
+          <div class="head">ENGINE ROOM</div>
+          <ul>
+            <li><span>推进器</span><span class="pips"><i></i><i></i><i></i><i></i><i></i></span></li>
+            <li><span>氮气罐</span><span class="pips"><i></i><i></i><i></i><i></i><i></i></span></li>
+            <li><span>声呐</span><span class="pips"><i></i><i></i><i></i><i></i><i></i></span></li>
+            <li><span>艇壳</span><span class="pips"><i></i><i></i><i></i><i></i><i></i></span></li>
+          </ul>
+        </div>
+        <div class="stamp" data-r="upScreen"><span>即将开放</span></div>
+      </div>
+      <div class="st" data-st="2">
+        <div class="plate one" data-r="plate"><h1>潜艇机库</h1></div>
+        <div class="hg-title" data-r="hgHead">HANGAR</div>
+        <div class="card" data-r="hgCard0"><b>???</b><small>未解锁</small></div>
+        <div class="card" data-r="hgCard1"><b>???</b><small>未解锁</small></div>
+        <div class="card" data-r="hgCard2"><b>???</b><small>未解锁</small></div>
+        <div class="stamp" data-r="hgScreen"><span>即将开放</span></div>
+      </div>
+    </div>
+  </div>
 
   <div id="tl" class="hud">
   <div id="hud" class="frame">
@@ -173,54 +187,40 @@
   <div id="zone" class="frame">青绿海域</div>
   </div>
   <button id="btn-view" class="frame" data-ui><span class="lab">视角</span><b id="view-name">尾随</b><kbd class="m-only">空格</kbd></button>
-  <button id="btn-pause" class="frame" data-ui>暂停</button>
-  <div id="pause-hint" class="hud"><kbd>H</kbd> 暂停 / 操作说明</div>
+  <button id="btn-pause" class="frame" data-ui>舰桥</button>
+  <div id="pause-hint" class="hud"><kbd>ESC</kbd> 回到舰桥</div>
   <div id="toast" class="hud frame"></div>
   <div id="touch" data-ui>
     <div class="col"><button id="btn-up" class="frame" data-ui>上浮</button><button id="btn-down" class="frame" data-ui>下潜</button></div>
     <div class="col"><button id="btn-nitro" class="frame" data-ui>氮气</button><button id="btn-boost" class="frame" data-ui>加速</button></div>
   </div>
 
-  <div id="title" data-ui>
-    <div class="t-inner" id="t-inner">
-      <canvas id="t-art"></canvas>
-      <header id="t-header">
-        <div class="lamps"><i class="lamp g"></i><i class="lamp a"></i><i class="lamp r"></i></div>
-        <div id="t-name">
-          <h1>深流潜航</h1>
-          <p class="en">ABYSSAL VOYAGER</p>
-        </div>
-        <div class="lamps"><i class="lamp a"></i><i class="lamp g"></i><i class="lamp g"></i></div>
-      </header>
-      <div id="t-main">
-        <div id="t-port"></div>
-        <div id="t-side">
-        <div id="t-plaque">
-          <p class="paused-label ponly">— 已暂停 —</p>
-          <h2>操作说明</h2>
-          <ul class="m-list">
-            <li><span class="k"><kbd class="cjk">鼠标</kbd></span><span class="d">指在潜艇左右<em>转向</em>，上下<em>升降</em></span></li>
-            <li><span class="k"><kbd>W</kbd><kbd>S</kbd><kbd>A</kbd><kbd>D</kbd></span><span class="d">键盘操控（方向键、滚轮也行）</span></li>
-            <li><span class="k"><kbd class="cjk">按住左键</kbd><kbd>SHIFT</kbd></span><span class="d"><em>加速</em></span></li>
-            <li><span class="k"><kbd>F</kbd><kbd class="cjk">右键</kbd></span><span class="d"><em>氮气冲刺</em></span></li>
-            <li><span class="k"><kbd class="cjk">单击</kbd><kbd>R</kbd></span><span class="d"><em>翻滚</em></span></li>
-            <li><span class="k"><kbd class="cjk">空格</kbd></span><span class="d">升起<em>潜望镜</em> / 回到尾随</span></li>
-            <li><span class="k"><kbd>H</kbd><kbd>ESC</kbd></span><span class="d">暂停</span></li>
-          </ul>
-          <ul class="t-list">
-            <li><span class="k"><kbd class="cjk">按住拖动</kbd></span><span class="d">左右<em>转向</em>，上下<em>升降</em></span></li>
-            <li><span class="k"><kbd class="cjk">轻点</kbd></span><span class="d"><em>翻滚</em></span></li>
-            <li><span class="k"><kbd class="cjk">加速</kbd><kbd class="cjk">氮气</kbd></span><span class="d">右下角：按住<em>加速</em>，点一下<em>冲刺</em></span></li>
-            <li><span class="k"><kbd class="cjk">上浮</kbd><kbd class="cjk">下潜</kbd></span><span class="d">右下角，按住生效</span></li>
-            <li><span class="k"><kbd class="cjk">视角</kbd></span><span class="d">右上角：<em>潜望镜</em> / 尾随</span></li>
-          </ul>
-        </div>
-        <div id="t-foot">
-          <div id="t-base"><button id="btn-start"><canvas id="t-btn"></canvas><span class="tonly">启动</span><span class="ponly">继续</span></button></div>
-          <p class="t-hint m-only"><span class="blink">按 <kbd>ENTER</kbd> 或 <kbd class="cjk">空格</kbd> <span class="tonly">启动</span><span class="ponly">继续</span></span></p>
-        </div>
-        </div>
-      </div>
+  <button id="nav-l" class="nav frame" data-ui><span class="arr">◀</span><span id="nav-l-name"></span><kbd>A</kbd></button>
+  <button id="nav-r" class="nav frame" data-ui><kbd>D</kbd><span id="nav-r-name"></span><span class="arr">▶</span></button>
+
+  <div id="guide" class="hide" data-ui>
+    <div class="sheet">
+      <h2>操作指导</h2>
+      <ul class="m-list">
+        <li><span class="k"><kbd class="cjk">鼠标</kbd></span><span class="d">指在潜艇左右<em>转向</em>，上下<em>升降</em></span></li>
+        <li><span class="k"><kbd>W</kbd><kbd>S</kbd><kbd>A</kbd><kbd>D</kbd></span><span class="d">键盘操控（方向键、滚轮也行）</span></li>
+        <li><span class="k"><kbd class="cjk">按住左键</kbd><kbd>SHIFT</kbd></span><span class="d"><em>加速</em></span></li>
+        <li><span class="k"><kbd>F</kbd><kbd class="cjk">右键</kbd></span><span class="d"><em>氮气冲刺</em>：约 2.4 秒，能量约 9 秒回满</span></li>
+        <li><span class="k"><kbd class="cjk">单击</kbd><kbd>R</kbd></span><span class="d"><em>翻滚</em></span></li>
+        <li><span class="k"><kbd class="cjk">空格</kbd></span><span class="d">升起<em>潜望镜</em>，再按回到尾随</span></li>
+        <li><span class="k"><kbd>ESC</kbd></span><span class="d">回到<em>舰桥</em></span></li>
+        <li><span class="k"><kbd>A</kbd><kbd>D</kbd></span><span class="d">在舰桥上：左右切换操作台</span></li>
+      </ul>
+      <ul class="t-list">
+        <li><span class="k"><kbd class="cjk">按住拖动</kbd></span><span class="d">左右<em>转向</em>，上下<em>升降</em></span></li>
+        <li><span class="k"><kbd class="cjk">轻点</kbd></span><span class="d"><em>翻滚</em></span></li>
+        <li><span class="k"><kbd class="cjk">加速</kbd><kbd class="cjk">氮气</kbd></span><span class="d">右下角：按住<em>加速</em>，点一下<em>冲刺</em></span></li>
+        <li><span class="k"><kbd class="cjk">上浮</kbd><kbd class="cjk">下潜</kbd></span><span class="d">右下角，按住生效</span></li>
+        <li><span class="k"><kbd class="cjk">视角</kbd></span><span class="d">右上角：<em>潜望镜</em> / 尾随</span></li>
+        <li><span class="k"><kbd class="cjk">舰桥</kbd></span><span class="d">右上角：回到<em>舰桥</em></span></li>
+        <li><span class="k"><kbd class="cjk">左右滑</kbd></span><span class="d">在舰桥上：切换操作台</span></li>
+      </ul>
+      <button class="close frame" id="guide-close">关闭</button>
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
