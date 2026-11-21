@@ -23,6 +23,9 @@ export class Input {
   private touchBoost = false;
   private touchRise = 0;
   touchUI = false;
+  /** 开始界面 / 暂停时：不接受操作，潜艇按 demoTurn 自己慢慢游 */
+  frozen = false;
+  demoTurn = 0;
 
   constructor(stage: HTMLElement, private toFrame: (cx: number, cy: number) => [number, number]) {
     const st = stage;
@@ -123,8 +126,25 @@ export class Input {
     return n;
   }
 
+  /** 丢掉所有排队的操作和按住的状态（开始 / 继续游戏时调用，免得按下的那个键被当成操作） */
+  clear() {
+    this.rollQueued = this.viewQueued = this.nitroQueued = false;
+    this.selectQueued = -1;
+    this.wheel = 0;
+    this.pointerDown = this.holdBoost = this.touchBoost = false;
+    this.touchRise = 0;
+    this.px = this.py = null;
+  }
+
   /** 每帧调用：整理成本帧的操作 */
   poll() {
+    if (this.frozen) {
+      this.clear();
+      this.boost = false;
+      this.rise = 0;
+      this.turn = this.demoTurn;
+      return;
+    }
     const k = this.keys;
     // 鼠标按住超过一小会儿算加速（短按是翻滚）
     if (this.pointerDown && this.pointerType === 'mouse' && performance.now() - this.downAt > 170) this.holdBoost = true;

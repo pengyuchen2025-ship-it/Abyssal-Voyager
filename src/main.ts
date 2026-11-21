@@ -56,22 +56,57 @@ input.bindHold($('btn-up'), () => input.setTouchRise(1), () => input.setTouchRis
 input.bindHold($('btn-down'), () => input.setTouchRise(-1), () => input.setTouchRise(0));
 const coarse = matchMedia('(pointer: coarse)').matches;
 document.body.classList.toggle('touch', coarse || q.has('touch'));
-const help = $('help');
-let helpHidden = false;
-function hideHelp() {
-  if (helpHidden) return;
-  helpHidden = true;
-  help.classList.add('hide');
+
+// ---- 开始界面 / 暂停 ----
+// title：开始界面，背景里潜艇自己慢慢游；play：游戏中；paused：暂停，显示同一张操作说明
+type State = 'title' | 'play' | 'paused';
+let state: State = 'title';
+const titleEl = $('title');
+function setState(s: State) {
+  state = s;
+  document.body.classList.toggle('title', s === 'title');
+  document.body.classList.toggle('paused', s === 'paused');
+  titleEl.classList.toggle('hide', s === 'play');
+  input.frozen = s !== 'play';
+  // 开始 / 继续时丢掉按下的那个键，免得空格同时切了视角
+  input.clear();
+  if (s === 'play') ($('btn-start') as HTMLButtonElement).blur();
+  else ($('btn-start') as HTMLButtonElement).focus({ preventScroll: true });
 }
-setTimeout(hideHelp, 12000);
+// 调试参数直接进游戏
+setState(q.has('play') || q.has('view') ? 'play' : 'title');
+$('btn-start').addEventListener('click', (e) => {
+  e.stopPropagation();
+  setState('play');
+});
+$('btn-pause').addEventListener('click', (e) => {
+  e.stopPropagation();
+  setState('paused');
+});
 addEventListener('keydown', (e) => {
-  if (e.code === 'KeyH') {
-    helpHidden = !helpHidden;
-    help.classList.toggle('hide', helpHidden);
+  if (state === 'play') {
+    if ((e.code === 'KeyH' || e.code === 'Escape') && !e.repeat) setState('paused');
+  } else if (!e.repeat && (e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter' || (state === 'paused' && (e.code === 'KeyH' || e.code === 'Escape')))) {
+    e.preventDefault();
+    setState('play');
   }
 });
-const depthEl = $('depth'), speedEl = $('speed'), zoneEl = $('zone'), toast = $('toast');
-const nitroBar = $('nitro-fill'), nitroBox = $('nitro');
+// 切到别的标签页时自动暂停
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && state === 'play') setState('paused');
+});
+
+// ---- HUD ----
+const depthEl = $('depth'), speedEl = $('speed'), zoneEl = $('zone'), toast = $('toast'), viewName = $('view-name');
+const spdCells = $('spd-cells'), n2Cells = $('n2-cells');
+const SPD_N = 12, N2_N = 8;
+spdCells.innerHTML = '<i></i>'.repeat(SPD_N);
+n2Cells.innerHTML = '<i></i>'.repeat(N2_N);
+const spdIs = Array.from(spdCells.children) as HTMLElement[], n2Is = Array.from(n2Cells.children) as HTMLElement[];
+let spdLit = -1, n2Lit = -1;
+function lightCells(cells: HTMLElement[], n: number) {
+  cells.forEach((c, i) => c.classList.toggle('on', i < n));
+}
 let zone = game.region > 0.5 ? 1 : 0;
 let toastTimer = 0;
 function showToast(text: string) {
@@ -96,8 +131,11 @@ function frame(now: number) {
   last = now;
   const w0 = performance.now();
 
-  game.update(dt, input, cam, subR.screen);
-  game.applyCamera(cam, r.W, r.H, dt);
+  if (state !== 'paused') {
+    input.demoTurn = Math.sin(game.time * 0.23) * 0.3;
+    game.update(dt, input, cam, subR.screen);
+  }
+  game.applyCamera(cam, r.W, r.H, state === 'paused' ? 0 : dt);
   const vp = game.vp;
   water.fogAmount = vp.fog;
   water.update(cam, r.H, game.region, game.time);
@@ -137,18 +175,24 @@ function frame(now: number) {
   const depth = Math.round((SURFACE_H - s.h) * 0.6);
   depthEl.textContent = String(depth).padStart(3, '0');
   speedEl.textContent = String(Math.round(game.speed * 0.5)).padStart(2, '0');
-  viewBtn.textContent = MODE_NAMES[game.viewTarget];
+  viewName.textContent = MODE_NAMES[game.viewTarget];
   document.body.classList.toggle('scope', game.viewTarget === Mode.Periscope);
-  nitroBar.style.width = (game.nitro * 100).toFixed(1) + '%';
-  nitroBox.classList.toggle('on', game.nitroOn);
-  nitroBox.classList.toggle('ready', !game.nitroOn && game.nitro >= 0.25);
+  // 航速格：满格 = 氮气最高速
+  const sl = Math.max(1, Math.round((game.speed / (32 * 2.8)) * SPD_N));
+  if (sl !== spdLit) lightCells(spdIs, (spdLit = sl));
+  spdCells.classList.toggle('boost', game.boosting && !game.nitroOn);
+  spdCells.classList.toggle('nitro', game.nitroOn);
+  const nl = Math.ceil(game.nitro * N2_N - 0.01);
+  if (nl !== n2Lit) lightCells(n2Is, (n2Lit = nl));
+  n2Cells.classList.toggle('fire', game.nitroOn);
+  n2Cells.classList.toggle('ready', !game.nitroOn && game.nitro >= 0.25);
   const z = game.region > 0.6 ? 1 : game.region < 0.4 ? 0 : zone;
   if (z !== zone) {
     zone = z;
     showToast(z ? '进入紫雾海域' : '回到青绿海域');
   }
   zoneEl.textContent = zone ? '紫雾海域' : '青绿海域';
-  if (!helpHidden && game.time > 1.5 && (input.px !== null || input.boost)) setTimeout(hideHelp, 5000);
+  zoneEl.classList.toggle('violet', zone === 1);
 
   // 太慢就自动降一档分辨率
   const work = performance.now() - w0;
