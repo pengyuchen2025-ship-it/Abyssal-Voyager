@@ -10,8 +10,6 @@ import { Input } from './input';
 import { Game, Mode, MODE_NAMES, MAST_A, MAST_BASE, MAST_LEN } from './game';
 import { Periscope } from './periscope';
 import { SURFACE_H } from './world';
-import { Bridge, Rect, STATIONS, N_ST } from './bridge';
-import { smoothstep } from './noise';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const stage = document.getElementById('stage') as HTMLDivElement;
@@ -59,203 +57,39 @@ input.bindHold($('btn-down'), () => input.setTouchRise(-1), () => input.setTouch
 const coarse = matchMedia('(pointer: coarse)').matches;
 document.body.classList.toggle('touch', coarse || q.has('touch'));
 
-// ---- 舰桥（开始界面 / 菜单） ----
-// bridge：在舰桥上（背后潜艇自己慢慢游）；dive：镜头穿过主圆窗进入游戏；play：游戏中；surface：从游戏退回舰桥
-type State = 'bridge' | 'dive' | 'play' | 'surface';
-let state: State = 'bridge';
-const bridgeCv = $('bridge-cv') as HTMLCanvasElement;
-const bridge = new Bridge(bridgeCv);
-const bridgeUI = $('bridge-ui');
-const stEls = Array.from(bridgeUI.querySelectorAll<HTMLElement>('.st'));
-/** 舰桥朝向：以「操作台」为单位，可以一直加减（绕圈），显示时取模 */
-let stIdx = +(q.get('station') ?? 0) || 0;
-let pan = stIdx; // 当前（动画中）的朝向
-let panFrom = pan, panT = 1;
-const PAN_DUR = 0.5;
-/** 进出游戏的过渡进度 0..1 */
-let diveT = 0;
-const DIVE_DUR = +(q.get('divedur') ?? 0) || 0.8; // 调试：?divedur=4 放慢穿窗过渡
-let started = false;
-let guideOpen = false;
-const mod = (a: number, n: number) => ((a % n) + n) % n;
-
-function setState(s: State) {
-  state = s;
-  document.body.classList.toggle('bridge', s === 'bridge');
-  input.frozen = s !== 'play';
-  // 丢掉按下的那个键，免得回车 / 空格同时被当成游戏操作
+// ---- 暂停 / 操作说明 ----
+// 开局在左侧显示操作说明，10 秒后淡出；之后按 Esc（触屏：右上角「暂停」）暂停并显示操作说明，再按一次继续
+let paused = false;
+function setPaused(p: boolean) {
+  paused = p;
+  document.body.classList.toggle('paused', p);
+  $('guide').classList.toggle('hide', !p);
+  // 继续时丢掉按下的键，免得被当成游戏操作
   input.clear();
+  input.frozen = p;
+  if (p) ($('guide-close') as HTMLElement).focus({ preventScroll: true });
+  else ($('guide-close') as HTMLElement).blur();
 }
-function go(d: number) {
-  if (state !== 'bridge' || guideOpen) return;
-  panFrom = pan;
-  panT = 0;
-  stIdx += d;
-}
-function startDive() {
-  if (state !== 'bridge' || guideOpen) return;
-  // 不在主操作台就先转回来
-  if (mod(stIdx, N_ST) !== 0) {
-    go(-mod(stIdx, N_ST) <= -N_ST / 2 ? N_ST - mod(stIdx, N_ST) : -mod(stIdx, N_ST));
-    return;
-  }
-  state = 'dive';
-  diveT = 0;
-  document.body.classList.remove('bridge');
-  input.frozen = true;
-  ($('btn-start') as HTMLElement).blur();
-}
-function surface(instant = false) {
-  if (state !== 'play') return;
-  state = 'surface';
-  diveT = instant ? 0 : 1;
-  input.frozen = true;
-  input.clear();
-}
-function setGuide(open: boolean) {
-  guideOpen = open;
-  $('guide').classList.toggle('hide', !open);
-  if (open) ($('guide-close') as HTMLElement).focus({ preventScroll: true });
-}
-$('btn-start').addEventListener('click', (e) => { e.stopPropagation(); startDive(); });
-$('btn-guide').addEventListener('click', (e) => { e.stopPropagation(); setGuide(true); });
-$('guide-close').addEventListener('click', (e) => { e.stopPropagation(); setGuide(false); });
-$('guide').addEventListener('click', (e) => { if (e.target === $('guide')) setGuide(false); });
-$('nav-l').addEventListener('click', (e) => { e.stopPropagation(); go(-1); });
-$('nav-r').addEventListener('click', (e) => { e.stopPropagation(); go(1); });
-$('btn-pause').addEventListener('click', (e) => { e.stopPropagation(); surface(); });
+$('guide-close').addEventListener('click', (e) => { e.stopPropagation(); setPaused(false); });
+$('guide').addEventListener('click', (e) => { if (e.target === $('guide')) setPaused(false); });
+$('btn-pause').addEventListener('click', (e) => { e.stopPropagation(); setPaused(!paused); });
 addEventListener('keydown', (e) => {
   if (e.repeat) return;
-  if (guideOpen) {
-    if (e.code === 'Escape' || e.code === 'KeyH' || e.code === 'Enter') { e.preventDefault(); setGuide(false); }
-    return;
+  if (e.code === 'Escape') setPaused(!paused);
+  else if (paused && (e.code === 'Enter' || e.code === 'Space')) {
+    e.preventDefault();
+    setPaused(false);
   }
-  if (state === 'play') {
-    if (e.code === 'Escape') surface();
-    else if (e.code === 'KeyH') setGuide(true);
-    return;
-  }
-  if (state !== 'bridge') return;
-  if (e.code === 'ArrowLeft' || e.code === 'KeyA') go(-1);
-  else if (e.code === 'ArrowRight' || e.code === 'KeyD') go(1);
-  else if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') { e.preventDefault(); startDive(); }
-  else if (e.code === 'KeyH') setGuide(true);
 });
-// 舰桥上左右滑动切换操作台
-{
-  let sx = 0, sy = 0, down = false;
-  stage.addEventListener('pointerdown', (e) => { down = true; sx = e.clientX; sy = e.clientY; });
-  stage.addEventListener('pointerup', (e) => {
-    if (!down) return;
-    down = false;
-    const dx = e.clientX - sx, dy = e.clientY - sy;
-    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.3) go(dx < 0 ? 1 : -1);
-  });
-}
-// 切到别的标签页：回到舰桥
+// 切到别的标签页时自动暂停
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) surface(true);
+  if (document.hidden && !paused) setPaused(true);
 });
-
-/**
- * 舰桥上：游戏镜头挪到主圆窗中间、并缩小（fit = 1/qEnd），潜艇就在圆窗正中。
- * 穿过圆窗：舰桥画布（CSS 缩放）和游戏镜头（缩放 + 支点位置）绕同一个不动点 F、按同一个倍数 q 放大，
- * q 从 1 到 qEnd（圆窗正好盖满整个屏幕）。到 qEnd 时游戏镜头正好回到正常的尾随镜头——
- * 两边一直对齐，中间没有任何跳变，就像镜头推进窗口。
- */
-let lastXf = '';
-function placeCanvases() {
-  bridge.ensure(stage.clientWidth, stage.clientHeight);
-  if (state === 'play') {
-    if (cam.fx !== 0.5) {
-      cam.fx = 0.5;
-      cam.update(r.W, r.H);
-    }
-    if (lastXf !== 'none') {
-      bridgeCv.style.display = 'none';
-      bridgeCv.style.transform = '';
-      lastXf = 'none';
-    }
-    return;
-  }
-  bridgeCv.style.display = '';
-  const L0 = parseFloat(canvas.style.left) || 0, T0 = parseFloat(canvas.style.top) || 0;
-  const cw = parseFloat(canvas.style.width), ch = parseFloat(canvas.style.height);
-  const vw = stage.clientWidth, vh = stage.clientHeight;
-  const w = bridge.window(pan);
-  // 圆窗要放大多少倍才能盖满整个屏幕
-  const far = Math.max(Math.hypot(w.x, w.y), Math.hypot(vw - w.x, w.y), Math.hypot(w.x, vh - w.y), Math.hypot(vw - w.x, vh - w.y));
-  // 不必放大到盖满四个角：后半段舰桥淡出，露出的就是同一个游戏画面。这样舰桥上潜艇在窗里也不会太小
-  const qEnd = Math.max(1.4, (far / w.r) * 0.62);
-  // 正常尾随镜头里潜艇（镜头支点）在屏幕上的位置
-  const Nx = L0 + cw * 0.5, Ny = T0 + ch * cam.fy;
-  const Fx = (qEnd * w.x - Nx) / (qEnd - 1), Fy = (qEnd * w.y - Ny) / (qEnd - 1);
-  const e = state === 'bridge' ? 0 : smoothstep(0, 1, diveT);
-  const q = Math.pow(qEnd, e);
-  // 游戏镜头：支点跟着放大走，缩放 = q / qEnd
-  const Px = Fx + q * (w.x - Fx), Py = Fy + q * (w.y - Fy);
-  cam.fx = (Px - L0) / cw;
-  cam.fy = (Py - T0) / ch;
-  cam.zoom *= q / qEnd;
-  cam.update(r.W, r.H);
-  // 舰桥画布（左上角在 0,0）：p → F + q (p − F)
-  const bt = q === 1 ? '' : `translate(${Fx * (1 - q)}px, ${Fy * (1 - q)}px) scale(${q})`;
-  const op = String(1 - smoothstep(0.55, 1, e));
-  if (bt + op !== lastXf) {
-    bridgeCv.style.transform = bt;
-    bridgeCv.style.opacity = op;
-    lastXf = bt + op;
-  }
+// 开局提示：10 秒后淡出（操作过也照样显示满 10 秒）
+{
+  const hint = $('start-hint');
+  setTimeout(() => hint.classList.add('hide'), q.has('nohint') ? 0 : 10000);
 }
-
-/** 舰桥文字层：和舰桥画布同位置同大小，里面每个元素按舰桥布局摆（单位：舰桥画布像素 × 放大倍数） */
-let uiW = 0, uiH = 0;
-function layoutUI() {
-  bridge.ensure(stage.clientWidth, stage.clientHeight);
-  if (uiW === bridge.L.W && uiH === bridge.L.H) return;
-  uiW = bridge.L.W; uiH = bridge.L.H;
-  const L = bridge.L, k = bridge.a;
-  const st = bridgeUI.style;
-  st.left = '0px';
-  st.top = '0px';
-  st.width = bridgeCv.style.width;
-  st.height = bridgeCv.style.height;
-  st.setProperty('--s', String(k));
-  const rects: Record<string, Rect> = {
-    plate: L.plate, screenL: L.screenL, screenR: L.screenR, upScreen: L.upScreen, hgScreen: L.hgScreen,
-    hgHead: { x: L.hgScreen.x, y: L.hgScreen.y + 2, w: L.hgScreen.w, h: 9 },
-    hgCard0: L.hgCards[0], hgCard1: L.hgCards[1], hgCard2: L.hgCards[2],
-  };
-  bridgeUI.querySelectorAll<HTMLElement>('[data-r]').forEach((el) => {
-    const rc = rects[el.dataset.r!];
-    el.style.left = rc.x * k + 'px';
-    el.style.top = rc.y * k + 'px';
-    el.style.width = rc.w * k + 'px';
-    el.style.height = rc.h * k + 'px';
-    el.style.setProperty('--ph', String(L.plate.h));
-    el.style.setProperty('--sh', String(rc.h));
-    el.style.setProperty('--sw', String(rc.w));
-  });
-}
-let lastNav = -1;
-function updateBridgeUI() {
-  layoutUI();
-  stEls.forEach((el, i) => {
-    el.style.transform = `translateX(${Math.round(bridge.stationX(i, pan)) * bridge.a}px)`;
-  });
-  const cur = mod(stIdx, N_ST);
-  if (cur !== lastNav) {
-    lastNav = cur;
-    $('nav-l-name').textContent = STATIONS[mod(cur - 1, N_ST)];
-    $('nav-r-name').textContent = STATIONS[mod(cur + 1, N_ST)];
-  }
-}
-
-// 调试参数直接进游戏
-if (q.has('play') || q.has('view')) {
-  setState('play');
-  started = true;
-} else setState('bridge');
 
 // ---- HUD ----
 const depthEl = $('depth'), speedEl = $('speed'), zoneEl = $('zone'), toast = $('toast'), viewName = $('view-name');
@@ -269,12 +103,16 @@ function lightCells(cells: HTMLElement[], n: number) {
   cells.forEach((c, i) => c.classList.toggle('on', i < n));
 }
 let zone = game.region > 0.5 ? 1 : 0;
+// 进入新海域：画面上方淡入一行地名，停一会儿再淡出
 let toastTimer = 0;
-function showToast(text: string) {
-  toast.textContent = text;
+function showToast(name: string, en: string) {
+  toast.querySelector('b')!.textContent = name;
+  toast.querySelector('small')!.textContent = en;
+  toast.classList.remove('show');
+  void toast.offsetWidth; // 重新触发动画
   toast.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => toast.classList.remove('show'), 2600);
+  toastTimer = window.setTimeout(() => toast.classList.remove('show'), 3200);
 }
 
 // ---- 主循环 ----
@@ -282,7 +120,6 @@ let last = performance.now();
 let slowAcc = 0, slowN = 0;
 const stats = { frames: 0, work: 0 };
 (window as any).__game = game;
-(window as any).__st = () => ({ state, diveT, pan, stIdx });
 (window as any).__cam = cam;
 (window as any).__dbg = { r, water, cam };
 let preCopy: Uint32Array | null = null;
@@ -293,40 +130,14 @@ function frame(now: number) {
   last = now;
   const w0 = performance.now();
 
-  // ---- 舰桥：转向动画、进出游戏的过渡 ----
-  if (panT < 1) {
-    panT = Math.min(1, panT + dt / PAN_DUR);
-    pan = panFrom + (stIdx - panFrom) * smoothstep(0, 1, panT);
-  }
-  if (state === 'dive') {
-    diveT = Math.min(1, diveT + dt / DIVE_DUR);
-    if (diveT >= 1) {
-      setState('play');
-      if (!started) {
-        started = true;
-        $('btn-start').querySelector('b')!.textContent = '继续潜航';
-      }
-    }
-  } else if (state === 'surface') {
-    diveT = Math.max(0, diveT - dt / DIVE_DUR);
-    if (diveT <= 0) setState('bridge');
-  }
-  const paused = state === 'play' && guideOpen;
-  if (!paused) {
-    input.demoTurn = Math.sin(game.time * 0.23) * 0.3;
-    game.update(dt, input, cam, subR.screen);
-  }
+  if (!paused) game.update(dt, input, cam, subR.screen);
   game.applyCamera(cam, r.W, r.H, paused ? 0 : dt);
-  const onBridge = state !== 'play';
-  placeCanvases();
-  // 圆窗不在屏幕上时不用画海底
-  const drawWorld = !onBridge || state !== 'bridge' || bridge.windowVisible(pan);
   const vp = game.vp;
   water.fogAmount = vp.fog;
   water.update(cam, r.H, game.region, game.time);
 
   const s = game.sub;
-  if (drawWorld) {
+  {
     renderTerrain(r, cam, world, water, { far: vp.terFar, caustics: vp.caus });
     water.renderSurface(r, cam);
     const inside = vp.scope > 0.75; // 从潜望镜里看：不画潜艇本体、影子和翼尖水流线
@@ -355,8 +166,6 @@ function frame(now: number) {
       }, world, vp.scope);
     }
   }
-  if (onBridge) bridge.draw(pan, game.time);
-  updateBridgeUI();
   if (q.has('pre')) preCopy = r.buf.slice();
   r.present();
 
@@ -378,7 +187,7 @@ function frame(now: number) {
   const z = game.region > 0.6 ? 1 : game.region < 0.4 ? 0 : zone;
   if (z !== zone) {
     zone = z;
-    showToast(z ? '进入紫雾海域' : '回到青绿海域');
+    showToast(z ? '紫雾海域' : '青绿海域', z ? 'VIOLET MIST' : 'TEAL SHALLOWS');
   }
   zoneEl.textContent = zone ? '紫雾海域' : '青绿海域';
   zoneEl.classList.toggle('violet', zone === 1);
