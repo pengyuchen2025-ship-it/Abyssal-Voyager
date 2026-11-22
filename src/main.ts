@@ -207,11 +207,14 @@ function placeMenu(dt: number) {
     lastXf = bt + op;
   }
 
-  // ---- 推向电脑屏幕（操作指导）：屏幕外接矩形大约占画面八成，四周留一圈电脑外壳 ----
+  // ---- 推向电脑屏幕（操作指导）：推到屏幕铺满整个画面 ----
   guideT = Math.max(0, Math.min(1, guideT + (guideOn ? 1 : -1) * dt / GUIDE_DUR));
   const m = menu.screen();
-  const Z = Math.min((vw * 0.8) / m.w, (vh * 0.8) / m.h);
-  const cx = m.x + m.w / 2, cy = m.y + m.h / 2;
+  // 斜着的屏幕里能放下的最大正矩形（左边取靠里的那条、右边取靠里的那条……），放大到盖满画面
+  const [qa, qb, qc, qd] = m.q;
+  const ix0 = Math.max(qa.x, qd.x), ix1 = Math.min(qb.x, qc.x), iy0 = Math.max(qa.y, qb.y), iy1 = Math.min(qc.y, qd.y);
+  const Z = Math.max(vw / (ix1 - ix0), vh / (iy1 - iy0)) * 1.04;
+  const cx = (ix0 + ix1) / 2, cy = (iy0 + iy1) / 2;
   const GFx = (Z * cx - vw / 2) / (Z - 1), GFy = (Z * cy - vh / 2) / (Z - 1);
   const gq = Math.pow(Z, smoothstep(0, 1, guideT));
   const st = gq === 1 ? '' : `translate(${GFx * (1 - gq)}px, ${GFy * (1 - gq)}px) scale(${gq})`;
@@ -219,15 +222,34 @@ function placeMenu(dt: number) {
     scene.style.transform = st;
     lastScene = st;
   }
-  // 显示屏界面（900×600）用仿射变换贴到倾斜的屏幕上（左上、右上、左下三个角对齐，往外多铺 2 像素免得露缝）
+  // 显示屏界面（900×600）：平时用仿射变换贴到倾斜的屏幕上（左上、右上、左下三个角对齐，往外多铺 2 像素免得露缝）；
+  // 推近的后半段慢慢摆正，推到底时正着铺满整个画面（那时电脑边框已经在画面外了）
   {
     const [tl, tr, , bl] = m.q;
     const pad = 2 * menu.s;
-    const ux = (tr.x - tl.x) / 900, uy = (tr.y - tl.y) / 900, vx = (bl.x - tl.x) / 600, vy = (bl.y - tl.y) / 600;
     const k = 1 + (2 * pad) / Math.hypot(tr.x - tl.x, tr.y - tl.y);
-    const ex = tl.x - pad, ey = tl.y - pad;
-    const mt = `matrix(${ux * k}, ${uy * k}, ${vx * k}, ${vy * k}, ${ex}, ${ey})`;
+    const A0 = [((tr.x - tl.x) / 900) * k, ((tr.y - tl.y) / 900) * k, ((bl.x - tl.x) / 600) * k, ((bl.y - tl.y) / 600) * k, tl.x - pad, tl.y - pad];
+    // 推到底时：正着盖满画面（屏幕坐标），换算回场景坐标（场景之后会被放大 Z 倍）
+    const sc = Math.max(vw / 900, vh / 600);
+    const offx = (vw - 900 * sc) / 2, offy = (vh - 600 * sc) / 2;
+    const A1 = [sc / Z, 0, 0, sc / Z, (offx - GFx * (1 - Z)) / Z, (offy - GFy * (1 - Z)) / Z];
+    const f = smoothstep(0.45, 1, guideT);
+    const M = A0.map((v, i) => v + (A1[i] - v) * f);
+    const mt = `matrix(${M.join(',')})`;
     if (monitorEl.style.transform !== mt) monitorEl.style.transform = mt;
+    // 推到底时看得到的范围（显示屏坐标）：文字只排在里面
+    const L = Math.max(0, -offx / sc), T = Math.max(0, -offy / sc);
+    const R = Math.min(900, (vw - offx) / sc), B = Math.min(600, (vh - offy) / sc);
+    const key = [L, T, R, B].join();
+    if (monitorEl.dataset.v !== key) {
+      monitorEl.dataset.v = key;
+      const ms = monitorEl.style;
+      ms.setProperty('--vl', L + 'px');
+      ms.setProperty('--vr', 900 - R + 'px');
+      ms.setProperty('--vt', T + 'px');
+      ms.setProperty('--vb', 600 - B + 'px');
+      ms.setProperty('--vz', String(Math.min(1, (B - T) / 560, (R - L) / 820)));
+    }
     drawIdle(Math.max(8, Math.round(m.w / r.scale)), Math.max(6, Math.round(m.h / r.scale)));
   }
   document.body.classList.toggle('guide', guideOn || guideT > 0);
