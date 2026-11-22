@@ -72,6 +72,7 @@
     #toast b::before, #toast b::after { content: '—'; color: rgba(255, 246, 216, 0.6); margin: 0 0.3em; letter-spacing: 0; }
     #toast small { display: block; margin-top: 4px; font: 11px/1 var(--px); color: var(--cyan); letter-spacing: 0.55em; margin-right: -0.55em; text-shadow: 1px 1px 0 rgba(4, 12, 18, 0.6); }
     #toast.show { animation: zone 3.2s ease-out forwards; }
+    body.menu #toast { display: none; }
     @keyframes zone { 0% { opacity: 0; transform: translate(-50%, -6px); } 18% { opacity: 1; transform: translate(-50%, 0); } 78% { opacity: 1; } 100% { opacity: 0; } }
     body.scope #tl { display: none; }
     body.touch .m-only { display: none; }
@@ -94,9 +95,10 @@
     body:not(.menu) #menu-ui, body.guide #menu-ui, body.diving #menu-ui { opacity: 0; }
     body:not(.menu) #menu-ui *, body.guide #menu-ui *, body.diving #menu-ui * { pointer-events: none !important; }
     #menu-title { position: absolute; color: #eef6f6; }
-    #menu-title h1 { margin: 0; font: var(--fs, 44px)/1 var(--title); letter-spacing: 0.08em; font-weight: normal; text-shadow: 3px 3px 0 rgba(4, 10, 16, 0.75); }
-    #menu-title p { margin: 0.55em 0 0; font: calc(var(--fs, 44px) * 0.22)/1 var(--px); letter-spacing: 0.42em; color: #9cc8cc; text-shadow: 1px 1px 0 rgba(4, 10, 16, 0.8); }
-    #menu-title i { display: block; width: 2.6em; height: 2px; margin-top: 0.7em; background: #9cc8cc; font-size: calc(var(--fs, 44px) * 0.36); opacity: 0.8; }
+    #menu-title h1 { margin: 0; font: var(--fs, 44px)/1 var(--title); letter-spacing: 0.06em; font-weight: normal; color: #fff6e0;
+      text-shadow: 0.05em 0.05em 0 #0a141c, 0.1em 0.1em 0 rgba(4, 10, 16, 0.55), 0 0 0.4em rgba(255, 196, 110, 0.35); }
+    #menu-title p { margin: 0.7em 0 0; font: calc(var(--fs, 44px) * 0.2)/1 var(--px); letter-spacing: 0.5em; color: #ffc46e; text-shadow: 1px 1px 0 rgba(4, 10, 16, 0.8); }
+    #menu-title i { display: block; width: 2.6em; height: 3px; margin-top: 0.7em; background: #ffc46e; font-size: calc(var(--fs, 44px) * 0.36); opacity: 0.8; }
     #menu-btns { position: absolute; display: flex; flex-direction: column; gap: 12px; }
     #menu-btns button { pointer-events: auto; display: flex; align-items: center; gap: 12px; padding: 6px 14px; font: 600 var(--bs, 18px)/1.5 var(--cjk); color: var(--cream); letter-spacing: 0.18em; text-align: left; }
     #menu-btns button .ic { width: 1em; color: var(--cyan); font-size: 0.8em; }

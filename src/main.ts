@@ -132,14 +132,14 @@ setState(q.has('play') || q.has('view') ? 'play' : 'menu');
  * q 从 1 到 qEnd；后半段背景淡出，到底时游戏镜头正好回到正常的尾随镜头——中间没有跳变。
  * 操作指导：整个场景（游戏画布 + 背景 + 屏幕上的字）一起绕不动点放大到电脑屏幕占满画面中间。
  */
-let lastXf = '', lastScene = '';
+let lastXf = '', lastScene = '', monitorDive = '';
 function placeMenu(dt: number) {
   if (state === 'play') {
     if (cam.fx !== 0.5) {
       cam.fx = 0.5;
       cam.update(r.W, r.H);
     }
-    if (lastXf) { menuCv.style.transform = ''; menuCv.style.opacity = ''; lastXf = ''; }
+    if (lastXf) { menuCv.style.transform = ''; menuCv.style.opacity = ''; monitorEl.style.opacity = ''; lastXf = ''; }
     if (lastScene) { scene.style.transform = ''; lastScene = ''; }
     return;
   }
@@ -175,10 +175,13 @@ function placeMenu(dt: number) {
   cam.update(r.W, r.H);
   // 背景画布：p → F + q (p − F)（画布左上角在 L0, T0，变换原点在它自己的左上角）
   const bt = q === 1 ? '' : `translate(${(Fx - L0) * (1 - q)}px, ${(Fy - T0) * (1 - q)}px) scale(${q})`;
+  // 电脑屏幕后面的显示屏在场景坐标里（左上角是 0,0），也要跟着同样放大
+  monitorDive = q === 1 ? '' : `translate(${Fx * (1 - q)}px, ${Fy * (1 - q)}px) scale(${q}) `;
   const op = String(1 - smoothstep(0.55, 1, e));
   if (bt + op !== lastXf) {
     menuCv.style.transform = bt;
     menuCv.style.opacity = op;
+    monitorEl.style.opacity = op;
     lastXf = bt + op;
   }
 
@@ -210,7 +213,7 @@ function placeMenu(dt: number) {
     const A1 = [sc / Z, 0, 0, sc / Z, (offx - GFx * (1 - Z)) / Z, (offy - GFy * (1 - Z)) / Z];
     const f = smoothstep(0.45, 1, guideT);
     const M = A0.map((v, i) => v + (A1[i] - v) * f);
-    const mt = `matrix(${M.join(',')})`;
+    const mt = `${monitorDive}matrix(${M.join(',')})`;
     if (monitorEl.style.transform !== mt) monitorEl.style.transform = mt;
     // 推到底时看得到的范围（显示屏坐标）：文字只排在里面
     const L = Math.max(0, -offx / sc), T = Math.max(0, -offy / sc);
@@ -282,7 +285,7 @@ function layoutMenuUI(vw: number, vh: number) {
   const pad = 14;
   t.style.left = Math.max(pad, tp.x) + 'px';
   t.style.top = Math.max(pad, tp.y) + 'px';
-  t.style.setProperty('--fs', Math.max(28, 46 * s) + 'px');
+  t.style.setProperty('--fs', Math.max(40, 76 * s) + 'px');
   b.style.left = Math.max(pad, bp.x) + 'px';
   b.style.width = Math.max(200, 288 * s) + 'px';
   b.style.setProperty('--bs', Math.max(14, 19 * s) + 'px');
@@ -388,7 +391,7 @@ function frame(now: number) {
   const z = game.region > 0.6 ? 1 : game.region < 0.4 ? 0 : zone;
   if (z !== zone) {
     zone = z;
-    showToast(z ? '紫雾海域' : '青绿海域', z ? 'VIOLET MIST' : 'TEAL SHALLOWS');
+    if (state === 'play') showToast(z ? '紫雾海域' : '青绿海域', z ? 'VIOLET MIST' : 'TEAL SHALLOWS');
   }
   zoneEl.textContent = zone ? '紫雾海域' : '青绿海域';
   zoneEl.classList.toggle('violet', zone === 1);
