@@ -7,6 +7,7 @@ html = html.replace(/<script type="module" crossorigin src="\.\/(assets\/[^"]+\.
   return '<script type="module">' + js + '</script>';
 });
 if (/src="\.\/assets/.test(html)) throw new Error('还有没内联的资源');
+if (/assets\/[\w-]+\.(webp|png|jpg|svg)/.test(html)) throw new Error('脚本里还引用了没内联的图片');
 writeFileSync('dist/single.html', html);
 // GitHub Pages 从 docs/ 目录发布，别人打开链接就能玩
 mkdirSync('docs', { recursive: true });

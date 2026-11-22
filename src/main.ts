@@ -10,6 +10,8 @@ import { Input } from './input';
 import { Game, Mode, MODE_NAMES, MAST_A, MAST_BASE, MAST_LEN } from './game';
 import { Periscope } from './periscope';
 import { SURFACE_H } from './world';
+import { Menu } from './menu';
+import { smoothstep } from './noise';
 
 const canvas = document.getElementById('view') as HTMLCanvasElement;
 const stage = document.getElementById('stage') as HTMLDivElement;
@@ -57,10 +59,52 @@ input.bindHold($('btn-down'), () => input.setTouchRise(-1), () => input.setTouch
 const coarse = matchMedia('(pointer: coarse)').matches;
 document.body.classList.toggle('touch', coarse || q.has('touch'));
 
+// ---- 开始界面 ----
+// menu：开始界面（圆窗里潜艇自己慢慢游）；dive：镜头推进圆窗进入游戏；play：游戏中。
+// 开始界面上点「操作指导」：镜头推向左边第一台电脑，屏幕上显示操作说明；Esc / 点一下返回。
+type State = 'menu' | 'dive' | 'play';
+let state: State = 'menu';
+const scene = $('scene'), monitorEl = $('monitor');
+const menuCv = $('menu-cv') as HTMLCanvasElement;
+const menu = new Menu(menuCv, () => {});
+let diveT = 0;
+const DIVE_DUR = 0.9;
+/** 推向电脑屏幕的进度 0..1，和目标 */
+let guideT = 0, guideOn = false;
+const GUIDE_DUR = 0.7;
+let started = false;
+
+function setState(s: State) {
+  state = s;
+  document.body.classList.toggle('menu', s !== 'play');
+  document.body.classList.toggle('diving', s === 'dive');
+  input.frozen = s !== 'play' || paused;
+  // 丢掉按下的那个键，免得回车 / 空格同时被当成游戏操作
+  input.clear();
+}
+function startDive() {
+  if (state !== 'menu') return;
+  if (guideOn || guideT > 0) { setGuide(false); return; }
+  state = 'dive';
+  diveT = 0;
+  document.body.classList.add('diving');
+  ($('btn-start') as HTMLElement).blur();
+}
+function setGuide(on: boolean) {
+  if (state !== 'menu') return;
+  guideOn = on;
+  if (on) ($('btn-guide') as HTMLElement).blur();
+}
+$('btn-start').addEventListener('click', (e) => { e.stopPropagation(); startDive(); });
+$('btn-guide').addEventListener('click', (e) => { e.stopPropagation(); setGuide(true); });
+monitorEl.addEventListener('click', (e) => { e.stopPropagation(); setGuide(false); });
+stage.addEventListener('pointerdown', () => { if (state === 'menu' && guideOn && guideT > 0.9) setGuide(false); });
+
 // ---- 暂停 / 操作说明 ----
 // 开局在左侧显示操作说明，10 秒后淡出；之后按 Esc（触屏：右上角「暂停」）暂停并显示操作说明，再按一次继续
 let paused = false;
 function setPaused(p: boolean) {
+  if (state !== 'play') return;
   paused = p;
   document.body.classList.toggle('paused', p);
   $('guide').classList.toggle('hide', !p);
@@ -75,6 +119,13 @@ $('guide').addEventListener('click', (e) => { if (e.target === $('guide')) setPa
 $('btn-pause').addEventListener('click', (e) => { e.stopPropagation(); setPaused(!paused); });
 addEventListener('keydown', (e) => {
   if (e.repeat) return;
+  if (state === 'menu') {
+    if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') { e.preventDefault(); startDive(); }
+    else if (e.code === 'KeyH') setGuide(!guideOn);
+    else if (e.code === 'Escape') setGuide(false);
+    return;
+  }
+  if (state !== 'play') return;
   if (e.code === 'Escape') setPaused(!paused);
   else if (paused && (e.code === 'Enter' || e.code === 'Space')) {
     e.preventDefault();
@@ -83,12 +134,121 @@ addEventListener('keydown', (e) => {
 });
 // 切到别的标签页时自动暂停
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && !paused) setPaused(true);
+  if (document.hidden && state === 'play' && !paused) setPaused(true);
 });
-// 开局提示：10 秒后淡出（操作过也照样显示满 10 秒）
-{
-  const hint = $('start-hint');
-  setTimeout(() => hint.classList.add('hide'), q.has('nohint') ? 0 : 10000);
+/** 第一次进入游戏：左侧显示操作说明，10 秒后淡出 */
+function showStartHint() {
+  if (q.has('nohint')) return;
+  document.body.classList.add('hint-on');
+  setTimeout(() => $('start-hint').classList.add('hide'), 10000);
+}
+
+// 调试参数直接进游戏
+if (q.has('play') || q.has('view')) {
+  setState('play');
+  started = true;
+  showStartHint();
+} else setState('menu');
+
+/**
+ * 开始界面：游戏镜头挪到圆窗中间、并缩小（1/qEnd），潜艇就在圆窗正中。
+ * 推进圆窗：背景画布（CSS 缩放）和游戏镜头（缩放 + 支点位置）绕同一个不动点 F、按同一个倍数 q 放大，
+ * q 从 1 到 qEnd；后半段背景淡出，到底时游戏镜头正好回到正常的尾随镜头——中间没有跳变。
+ * 操作指导：整个场景（游戏画布 + 背景 + 屏幕上的字）一起绕不动点放大到电脑屏幕占满画面中间。
+ */
+let lastXf = '', lastScene = '';
+function placeMenu(dt: number) {
+  if (state === 'play') {
+    if (cam.fx !== 0.5) {
+      cam.fx = 0.5;
+      cam.update(r.W, r.H);
+    }
+    if (lastXf) { menuCv.style.transform = ''; menuCv.style.opacity = ''; lastXf = ''; }
+    if (lastScene) { scene.style.transform = ''; lastScene = ''; }
+    return;
+  }
+  const vw = stage.clientWidth, vh = stage.clientHeight;
+  const L0 = parseFloat(canvas.style.left) || 0, T0 = parseFloat(canvas.style.top) || 0;
+  const cw = parseFloat(canvas.style.width), ch = parseFloat(canvas.style.height);
+  menu.layout(vw, vh, r.W, r.H, r.scale, L0, T0);
+  layoutMenuUI(vw, vh);
+
+  // ---- 推进圆窗 ----
+  if (state === 'dive') {
+    diveT = Math.min(1, diveT + dt / DIVE_DUR);
+    if (diveT >= 1) {
+      setState('play');
+      if (!started) {
+        started = true;
+        showStartHint();
+      }
+      placeMenu(0);
+      return;
+    }
+  }
+  const w = menu.window();
+  const far = Math.max(Math.hypot(w.x, w.y), Math.hypot(vw - w.x, w.y), Math.hypot(w.x, vh - w.y), Math.hypot(vw - w.x, vh - w.y));
+  const qEnd = Math.max(1.4, (far / w.r) * 0.62);
+  const Nx = L0 + cw * 0.5, Ny = T0 + ch * cam.fy;
+  const Fx = (qEnd * w.x - Nx) / (qEnd - 1), Fy = (qEnd * w.y - Ny) / (qEnd - 1);
+  const e = state === 'dive' ? smoothstep(0, 1, diveT) : 0;
+  const q = Math.pow(qEnd, e);
+  const Px = Fx + q * (w.x - Fx), Py = Fy + q * (w.y - Fy);
+  cam.fx = (Px - L0) / cw;
+  cam.fy = (Py - T0) / ch;
+  cam.zoom *= q / qEnd;
+  cam.update(r.W, r.H);
+  // 背景画布：p → F + q (p − F)（画布左上角在 L0, T0，变换原点在它自己的左上角）
+  const bt = q === 1 ? '' : `translate(${(Fx - L0) * (1 - q)}px, ${(Fy - T0) * (1 - q)}px) scale(${q})`;
+  const op = String(1 - smoothstep(0.55, 1, e));
+  if (bt + op !== lastXf) {
+    menuCv.style.transform = bt;
+    menuCv.style.opacity = op;
+    lastXf = bt + op;
+  }
+
+  // ---- 推向电脑屏幕（操作指导） ----
+  guideT = Math.max(0, Math.min(1, guideT + (guideOn ? 1 : -1) * dt / GUIDE_DUR));
+  const m = menu.monitor();
+  const Z = Math.min((vw * 0.66) / m.w, (vh * 0.62) / m.h);
+  const cx = m.x + m.w / 2, cy = m.y + m.h / 2;
+  const GFx = (Z * cx - vw / 2) / (Z - 1), GFy = (Z * cy - vh / 2) / (Z - 1);
+  const gq = Math.pow(Z, smoothstep(0, 1, guideT));
+  const st = gq === 1 ? '' : `translate(${GFx * (1 - gq)}px, ${GFy * (1 - gq)}px) scale(${gq})`;
+  if (st !== lastScene) {
+    scene.style.transform = st;
+    lastScene = st;
+  }
+  // 屏幕上的字：按放大后的大小排版，再缩回去
+  const ms = monitorEl.style;
+  ms.left = m.x + 'px';
+  ms.top = m.y + 'px';
+  ms.width = m.w * Z + 'px';
+  ms.height = m.h * Z + 'px';
+  ms.transform = `scale(${1 / Z})`;
+  ms.setProperty('--mh', m.h * Z + 'px');
+  document.body.classList.toggle('guide', guideOn || guideT > 0);
+  document.body.classList.toggle('guide-on', guideOn && guideT > 0.85);
+}
+
+/** 标题和按钮：跟着背景图上的位置走（原图左上的标题、左下的按钮），但不出屏幕 */
+let uiKey = '';
+function layoutMenuUI(vw: number, vh: number) {
+  const key = [vw, vh, menu.s, menu.ox, menu.oy].join();
+  if (key === uiKey) return;
+  uiKey = key;
+  const s = menu.s;
+  const t = $('menu-title'), b = $('menu-btns');
+  const tp = menu.map(58, 172), bp = menu.map(60, 584);
+  const pad = 14;
+  t.style.left = Math.max(pad, tp.x) + 'px';
+  t.style.top = Math.max(pad, tp.y) + 'px';
+  t.style.setProperty('--fs', Math.max(28, 46 * s) + 'px');
+  b.style.left = Math.max(pad, bp.x) + 'px';
+  b.style.width = Math.max(200, 288 * s) + 'px';
+  b.style.setProperty('--bs', Math.max(14, 19 * s) + 'px');
+  const bh = b.offsetHeight;
+  b.style.top = Math.min(bp.y, vh - bh - pad) + 'px';
 }
 
 // ---- HUD ----
@@ -130,8 +290,10 @@ function frame(now: number) {
   last = now;
   const w0 = performance.now();
 
+  input.demoTurn = state === 'play' ? 0 : Math.sin(game.time * 0.23) * 0.3; // 开始界面上潜艇自己慢慢转弯
   if (!paused) game.update(dt, input, cam, subR.screen);
   game.applyCamera(cam, r.W, r.H, paused ? 0 : dt);
+  placeMenu(dt);
   const vp = game.vp;
   water.fogAmount = vp.fog;
   water.update(cam, r.H, game.region, game.time);
