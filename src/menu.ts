@@ -9,8 +9,8 @@ import bgUrl from './assets/menu-bg.webp?inline';
 export const ART = {
   W: 1280, H: 760,
   win: { cx: 822.5, cy: 316, r: 248 },
-  /** 左边第一台电脑的屏幕（操作指导显示在这里） */
-  monitor: { x: 180, y: 388, w: 99, h: 69 },
+  /** 左边第一台电脑的屏幕（挖空，后面是单独的显示屏界面）：左上、右上、右下、左下 */
+  screen: [[178, 391], [274, 388], [281, 450], [186, 459]] as [number, number][],
   title: { x: 58, y: 172, w: 230 },
   buttons: { x: 60, y: 584, w: 288 },
 };
@@ -76,6 +76,28 @@ export class Menu {
         d[i + 3] = d[i + 3] > 128 ? 255 : 0;
       }
     ctx.putImageData(id, 0, 0);
+    // 电脑屏幕的玻璃：内侧一圈暗边 + 左上一道斜反光（半透明，盖在后面的显示屏界面上）
+    const q = ART.screen.map(([x, y]) => [(this.ox + x * s - left) / scale, (this.oy + y * s - top) / scale]);
+    const path = () => {
+      ctx.beginPath();
+      q.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+    };
+    ctx.save();
+    path();
+    ctx.clip();
+    const [x0, y0] = q[0], [x2, y2] = q[2];
+    const g = ctx.createLinearGradient(x0, y0, x2, y2);
+    g.addColorStop(0, 'rgba(230,255,255,0.22)');
+    g.addColorStop(0.28, 'rgba(230,255,255,0.08)');
+    g.addColorStop(0.3, 'rgba(230,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(Math.min(x0, q[3][0]) - 2, Math.min(y0, q[1][1]) - 2, x2 - x0 + 6, y2 - y0 + 6);
+    path();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0,12,14,0.55)';
+    ctx.stroke();
+    ctx.restore();
   }
 
   /** 原图坐标 → 屏幕坐标 */
@@ -89,9 +111,11 @@ export class Menu {
     return { x: c.x, y: c.y, r: ART.win.r * this.s };
   }
 
-  /** 操作指导那台电脑屏幕在屏幕上的位置 */
-  monitor() {
-    const m = ART.monitor, p = this.map(m.x, m.y);
-    return { x: p.x, y: p.y, w: m.w * this.s, h: m.h * this.s };
+  /** 电脑屏幕四个角在屏幕上的位置（左上、右上、右下、左下）和外接矩形 */
+  screen() {
+    const q = ART.screen.map(([x, y]) => this.map(x, y));
+    const xs = q.map((p) => p.x), ys = q.map((p) => p.y);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { q, x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
   }
 }

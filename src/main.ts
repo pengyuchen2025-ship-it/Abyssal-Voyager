@@ -207,10 +207,10 @@ function placeMenu(dt: number) {
     lastXf = bt + op;
   }
 
-  // ---- 推向电脑屏幕（操作指导） ----
+  // ---- 推向电脑屏幕（操作指导）：屏幕外接矩形大约占画面八成，四周留一圈电脑外壳 ----
   guideT = Math.max(0, Math.min(1, guideT + (guideOn ? 1 : -1) * dt / GUIDE_DUR));
-  const m = menu.monitor();
-  const Z = Math.min((vw * 0.66) / m.w, (vh * 0.62) / m.h);
+  const m = menu.screen();
+  const Z = Math.min((vw * 0.8) / m.w, (vh * 0.8) / m.h);
   const cx = m.x + m.w / 2, cy = m.y + m.h / 2;
   const GFx = (Z * cx - vw / 2) / (Z - 1), GFy = (Z * cy - vh / 2) / (Z - 1);
   const gq = Math.pow(Z, smoothstep(0, 1, guideT));
@@ -219,16 +219,58 @@ function placeMenu(dt: number) {
     scene.style.transform = st;
     lastScene = st;
   }
-  // 屏幕上的字：按放大后的大小排版，再缩回去
-  const ms = monitorEl.style;
-  ms.left = m.x + 'px';
-  ms.top = m.y + 'px';
-  ms.width = m.w * Z + 'px';
-  ms.height = m.h * Z + 'px';
-  ms.transform = `scale(${1 / Z})`;
-  ms.setProperty('--mh', m.h * Z + 'px');
+  // 显示屏界面（900×600）用仿射变换贴到倾斜的屏幕上（左上、右上、左下三个角对齐，往外多铺 2 像素免得露缝）
+  {
+    const [tl, tr, , bl] = m.q;
+    const pad = 2 * menu.s;
+    const ux = (tr.x - tl.x) / 900, uy = (tr.y - tl.y) / 900, vx = (bl.x - tl.x) / 600, vy = (bl.y - tl.y) / 600;
+    const k = 1 + (2 * pad) / Math.hypot(tr.x - tl.x, tr.y - tl.y);
+    const ex = tl.x - pad, ey = tl.y - pad;
+    const mt = `matrix(${ux * k}, ${uy * k}, ${vx * k}, ${vy * k}, ${ex}, ${ey})`;
+    if (monitorEl.style.transform !== mt) monitorEl.style.transform = mt;
+    drawIdle(Math.max(8, Math.round(m.w / r.scale)), Math.max(6, Math.round(m.h / r.scale)));
+  }
   document.body.classList.toggle('guide', guideOn || guideT > 0);
   document.body.classList.toggle('guide-on', guideOn && guideT > 0.85);
+}
+
+/** 电脑屏幕的待机画面：声呐波形慢慢滚动，像素大小和游戏画面一样 */
+const idleCv = monitorEl.querySelector('canvas') as HTMLCanvasElement;
+const idleCtx = idleCv.getContext('2d')!;
+function drawIdle(w: number, h: number) {
+  if (idleCv.width !== w || idleCv.height !== h) {
+    idleCv.width = w;
+    idleCv.height = h;
+  }
+  if (document.body.classList.contains('guide-on')) return;
+  const t = game.time, c = idleCtx;
+  c.fillStyle = '#0d3a3c';
+  c.fillRect(0, 0, w, h);
+  // 顶上一条状态栏
+  c.fillStyle = '#2c8a86';
+  c.fillRect(1, 1, w - 2, 1);
+  c.fillStyle = '#6fd8cc';
+  for (let i = 0; i < 3; i++) c.fillRect(2 + i * 3, 3, 2, 1);
+  if (Math.sin(t * 3) > 0) c.fillRect(w - 4, 3, 2, 1);
+  // 滚动的海床波形
+  const base = h - 2;
+  for (let x = 1; x < w - 1; x++) {
+    const u = x + t * 4;
+    const yv = Math.round(base - (h * 0.22 + Math.sin(u * 0.21) * h * 0.13 + Math.sin(u * 0.53 + 1.3) * h * 0.07 + Math.max(0, Math.sin(u * 0.09)) * h * 0.2));
+    c.fillStyle = '#6fd8cc';
+    c.fillRect(x, yv, 1, 1);
+    c.fillStyle = '#1f6a68';
+    c.fillRect(x, yv + 1, 1, base - yv);
+  }
+  // 中间闪烁的目标点
+  if ((t * 1.3) % 1 < 0.6) {
+    c.fillStyle = '#e8fff8';
+    c.fillRect(Math.round(w * 0.5), Math.round(h * 0.38), 1, 1);
+  }
+  // 扫描线（一条亮线从上往下走）
+  const sy = Math.floor(((t * 0.5) % 1) * h);
+  c.fillStyle = 'rgba(150,255,230,0.25)';
+  c.fillRect(0, sy, w, 1);
 }
 
 /** 标题和按钮：跟着背景图上的位置走（原图左上的标题、左下的按钮），但不出屏幕 */

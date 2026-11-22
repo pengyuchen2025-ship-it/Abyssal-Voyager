@@ -124,22 +124,35 @@
     #btn-start .lb { color: var(--cream); }
     #btn-guide { color: var(--ink) !important; }
     body.touch #menu-btns kbd { display: none; }
-    /* 左边电脑屏幕上的操作指导：元素按放大后的尺寸排版，再缩回屏幕大小（镜头推近后正好 1:1，字不会糊） */
-    #monitor { position: absolute; transform-origin: 0 0; opacity: 0; transition: opacity 0.25s; pointer-events: none; }
-    body.guide-on #monitor { opacity: 1; pointer-events: auto; cursor: pointer; }
-    #monitor .crt { position: absolute; inset: 0; box-sizing: border-box; padding: 3.5% 5%; overflow: hidden; color: #9ef6e4; font: 600 calc(var(--mh, 400px) / 22)/1.55 var(--cjk);
-      background: radial-gradient(ellipse at 50% 45%, rgba(20, 74, 78, 0.96), rgba(6, 32, 38, 0.98) 75%);
-      text-shadow: 0 0 6px rgba(120, 255, 220, 0.55); border-radius: 6px; }
-    #monitor .crt::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 2px, transparent 2px 4px); pointer-events: none; }
-    #monitor h2 { margin: 0 0 0.5em; font: 1.5em/1.3 var(--title); letter-spacing: 0.3em; color: #d4fff4; border-bottom: 2px solid rgba(158, 246, 228, 0.35); padding-bottom: 0.25em; }
-    #monitor ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 1.2em; row-gap: 0.25em; }
+    /* 左边电脑的显示屏：在背景画布后面，透过挖空的屏幕看到。按 900×600 排版，再用仿射变换贴到倾斜的屏幕上 */
+    #monitor { position: absolute; left: 0; top: 0; width: 900px; height: 600px; transform-origin: 0 0; overflow: hidden; background: #062226; }
+    body.guide-on #monitor { cursor: pointer; }
+    #monitor .idle { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+    #monitor .crt { position: absolute; inset: 0; box-sizing: border-box; padding: 34px 54px; color: #9ef6e4; font: 600 25px/1.6 var(--cjk);
+      background: radial-gradient(ellipse at 50% 45%, #134a4c, #062628 78%); text-shadow: 0 0 8px rgba(120, 255, 220, 0.6);
+      opacity: 0; visibility: hidden; }
+    #monitor .crt::before { content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+      background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.2) 0 2px, transparent 2px 5px), radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55) 100%); }
+    body.guide-on #monitor .crt { opacity: 1; visibility: visible; animation: crt-on 0.45s ease-out both; }
+    body.guide-on #monitor .idle { visibility: hidden; }
+    @keyframes crt-on { 0% { transform: scale(0.7, 0.008); filter: brightness(4); } 40% { transform: scale(1, 0.012); filter: brightness(3); } 70% { transform: scale(1, 1); filter: brightness(1.6); } 100% { transform: none; filter: none; } }
+    #monitor .bar { display: flex; align-items: baseline; gap: 18px; padding-bottom: 10px; margin-bottom: 16px; border-bottom: 3px solid rgba(158, 246, 228, 0.4); }
+    #monitor .bar b { font: 30px/1 var(--px); letter-spacing: 0.12em; color: #d4fff4; }
+    #monitor .bar span { font: 32px/1 var(--title); letter-spacing: 0.25em; color: #ffd88a; text-shadow: 0 0 8px rgba(255, 200, 100, 0.5); }
+    #monitor .bar i { margin-left: auto; font: normal 18px var(--px); color: #7cffb0; animation: blink 1.6s steps(2) infinite; }
+    #monitor ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 1.3em; row-gap: 4px; }
     #monitor li { display: contents; }
-    #monitor .k { color: #ffd88a; font-family: var(--px), var(--cjk); font-size: 0.85em; letter-spacing: 0.08em; text-shadow: 0 0 6px rgba(255, 200, 100, 0.5); white-space: nowrap; }
+    #monitor li.line > span { animation: inherit; }
+    #monitor .k { color: #ffd88a; font: 22px/1.75 var(--px), var(--cjk); letter-spacing: 0.06em; text-shadow: 0 0 8px rgba(255, 200, 100, 0.5); white-space: nowrap; }
     #monitor .t-list { display: none; }
     body.touch #monitor .m-list { display: none; }
     body.touch #monitor .t-list { display: grid; }
-    #monitor .back { margin: 0.8em 0 0; font-size: 0.85em; opacity: 0.75; }
-    #monitor .cursor { animation: blink 1s steps(2) infinite; }
+    #monitor .back { margin: 18px 0 0; opacity: 0.85; }
+    #monitor em { font-style: normal; color: #7cffb0; }
+    #monitor .cursor { animation: blink 0.9s steps(2) infinite; }
+    /* 逐行打出来（从左往右露出） */
+    body.guide-on #monitor .line, body.guide-on #monitor li.line > span { animation: type 0.32s steps(14) both; animation-delay: calc(0.45s + var(--i) * 0.13s); }
+    @keyframes type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
     @keyframes blink { 50% { opacity: 0; } }
     body.menu .hud, body.menu #btn-view, body.menu #touch, body.menu #btn-pause { opacity: 0; pointer-events: none; }
     /* 手机竖着拿：提示横过来 */
@@ -176,26 +189,30 @@
   </style>
 </head>
 <body class="menu">
-  <div id="stage"><div id="scene"><canvas id="view"></canvas><canvas id="menu-cv"></canvas>
-    <div id="monitor"><div class="crt">
-      <h2>操作指导</h2>
-      <ul class="m-list">
-        <li><span class="k">鼠标</span><span class="d">指在潜艇左右 → 转向，上下 → 升降</span></li>
-        <li><span class="k">W S A D</span><span class="d">键盘操控（方向键、滚轮也行）</span></li>
-        <li><span class="k">左键按住</span><span class="d">加速（或 Shift）</span></li>
-        <li><span class="k">F / 右键</span><span class="d">氮气冲刺，约 9 秒回满</span></li>
-        <li><span class="k">单击 / R</span><span class="d">翻滚</span></li>
-        <li><span class="k">空格</span><span class="d">升起潜望镜 / 回到尾随</span></li>
-        <li><span class="k">ESC</span><span class="d">游戏中暂停</span></li>
-      </ul>
-      <ul class="t-list">
-        <li><span class="k">按住拖动</span><span class="d">左右 → 转向，上下 → 升降</span></li>
-        <li><span class="k">轻点</span><span class="d">翻滚</span></li>
-        <li><span class="k">右下角</span><span class="d">加速（按住）、氮气冲刺、上浮、下潜</span></li>
-        <li><span class="k">右上角</span><span class="d">切换潜望镜、暂停</span></li>
-      </ul>
-      <p class="back"><span class="m-only">按 ESC 返回</span><span class="t-only">点一下返回</span><span class="cursor">_</span></p>
+  <div id="stage"><div id="scene"><canvas id="view"></canvas>
+    <div id="monitor"><canvas class="idle"></canvas><div class="crt">
+      <div class="bar"><b>ABYSSAL OS</b><span>操作指导</span><i>● ONLINE</i></div>
+      <div class="body">
+        <p class="line" style="--i:0">&gt; 读取操作手册 ……… <em>OK</em></p>
+        <ul class="m-list">
+          <li class="line" style="--i:1"><span class="k">鼠标</span><span class="d">指在潜艇左右 → 转向，上下 → 升降</span></li>
+          <li class="line" style="--i:2"><span class="k">W S A D</span><span class="d">键盘操控（方向键、滚轮也行）</span></li>
+          <li class="line" style="--i:3"><span class="k">左键按住</span><span class="d">加速（或 Shift）</span></li>
+          <li class="line" style="--i:4"><span class="k">F / 右键</span><span class="d">氮气冲刺，约 9 秒回满</span></li>
+          <li class="line" style="--i:5"><span class="k">单击 / R</span><span class="d">翻滚</span></li>
+          <li class="line" style="--i:6"><span class="k">空格</span><span class="d">升起潜望镜 / 回到尾随</span></li>
+          <li class="line" style="--i:7"><span class="k">ESC</span><span class="d">游戏中暂停</span></li>
+        </ul>
+        <ul class="t-list">
+          <li class="line" style="--i:1"><span class="k">按住拖动</span><span class="d">左右 → 转向，上下 → 升降</span></li>
+          <li class="line" style="--i:2"><span class="k">轻点</span><span class="d">翻滚</span></li>
+          <li class="line" style="--i:3"><span class="k">右下角</span><span class="d">加速（按住）、氮气冲刺、上浮、下潜</span></li>
+          <li class="line" style="--i:4"><span class="k">右上角</span><span class="d">切换潜望镜、暂停</span></li>
+        </ul>
+        <p class="back line" style="--i:8">&gt; <span class="m-only">按 ESC 返回</span><span class="t-only">点一下返回</span><span class="cursor">█</span></p>
+      </div>
     </div></div>
+    <canvas id="menu-cv"></canvas>
   </div>
   </div>
 
