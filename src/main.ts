@@ -1,6 +1,7 @@
 import { Renderer } from './renderer';
 import { Camera } from './camera';
-import { SubModel, SubRenderer } from './sub';
+import { SubModel, SubRenderer, ENEMY_PAL } from './sub';
+import { Combat, HULL_MAX, RELOAD } from './combat';
 import { World } from './world';
 import { Water } from './water';
 import { renderTerrain } from './terrain';
@@ -31,6 +32,7 @@ const water = new Water();
 const life = new Life(world);
 const parts = new Particles();
 const subR = new SubRenderer(new SubModel());
+const enemyR = new SubRenderer(new SubModel(), ENEMY_PAL);
 const cam = new Camera();
 const game = new Game(world, parts);
 const periscope = new Periscope();
@@ -52,6 +54,11 @@ $('btn-nitro').addEventListener('pointerdown', (e) => {
   e.preventDefault();
   e.stopPropagation();
   input.queueNitro();
+});
+$('btn-fire').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  input.queueFire();
 });
 input.bindHold($('btn-boost'), () => input.setTouchBoost(true), () => input.setTouchBoost(false));
 input.bindHold($('btn-up'), () => input.setTouchRise(1), () => input.setTouchRise(0));
@@ -87,6 +94,7 @@ function startDive() {
   if (guideOn || guideT > 0) { setGuide(false); return; }
   state = 'dive';
   diveT = 0;
+  combat.reset();
   document.body.classList.add('diving');
   ($('btn-start') as HTMLElement).blur();
 }
@@ -159,7 +167,11 @@ function placeMenu(dt: number) {
     }
   } else if (state === 'surface') {
     diveT = Math.max(0, diveT - dt / DIVE_DUR);
-    if (diveT <= 0) setState('menu');
+    if (diveT <= 0) {
+      setState('menu');
+      combat.reset(); // 开始界面的圆窗里不留敌人
+      document.body.classList.remove('wrecked', 'lowhull');
+    }
   }
   const w = menu.window();
   const far = Math.max(Math.hypot(w.x, w.y), Math.hypot(vw - w.x, w.y), Math.hypot(w.x, vh - w.y), Math.hypot(vw - w.x, vh - w.y));
@@ -304,6 +316,43 @@ let spdLit = -1, n2Lit = -1;
 function lightCells(cells: HTMLElement[], n: number) {
   cells.forEach((c, i) => c.classList.toggle('on', i < n));
 }
+// ---- 战斗 ----
+const hullCells = $('hull-cells'), killsEl = $('kills'), msgEl = $('msg'), hurtEl = $('hurt');
+const HULL_N = 10;
+hullCells.innerHTML = '<i></i>'.repeat(HULL_N);
+const hullIs = Array.from(hullCells.children) as HTMLElement[];
+let hullLit = -1, shake = 0, msgTimer = 0;
+/** 屏幕下方一行小提示，停一会儿淡出 */
+function say(text: string, kind = '') {
+  msgEl.textContent = text;
+  msgEl.className = 'hud show ' + kind;
+  clearTimeout(msgTimer);
+  msgTimer = window.setTimeout(() => msgEl.classList.remove('show'), 1800);
+}
+const combat = new Combat(world, parts, {
+  hit(dmg) {
+    shake = Math.min(1, shake + dmg / 25);
+    hurtEl.classList.remove('on');
+    void hurtEl.offsetWidth;
+    hurtEl.classList.add('on');
+  },
+  kill() {
+    say('击沉敌艇！', 'good');
+  },
+  pickup(kind) {
+    say(kind === 'repair' ? '修理包：艇壳 +35' : '氮气罐：氮气已补满', 'good');
+  },
+  dead() {
+    shake = 1;
+    input.frozen = true;
+    const t = Math.round(combat.time);
+    $('wreck-stats').textContent = `击沉 ${combat.kills} 艘 · 坚持 ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    document.body.classList.add('wrecked');
+    setTimeout(() => surface(), 2800);
+  },
+});
+(window as any).__combat = combat;
+
 let zone = game.region > 0.5 ? 1 : 0;
 // 进入新海域：画面上方淡入一行地名，停一会儿再淡出
 let toastTimer = 0;
@@ -334,6 +383,14 @@ function frame(now: number) {
 
   input.demoTurn = state === 'play' ? 0 : Math.sin(game.time * 0.23) * 0.3; // 开始界面上潜艇自己慢慢转弯
   game.update(dt, input, cam, subR.screen);
+  if (state === 'play') {
+    combat.update(dt, game.sub, () => { game.nitro = 1; });
+    if (input.takeFire() && !combat.dead) {
+      if (game.vp && game.vp.scope > 0.9) {
+        if (!combat.fire(game.sub, 0, combat.lock)) say('鱼雷装填中…');
+      } else say('升起潜望镜（空格）才能发射鱼雷', 'warn');
+    }
+  }
   game.applyCamera(cam, r.W, r.H, dt);
   placeMenu(dt);
   const vp = game.vp;
@@ -357,16 +414,24 @@ function frame(now: number) {
       }
     }, vp.chase, pj.x, pj.y, inside);
     if (!inside) game.trails.draw(r, cam, water, game.time);
+    if (state !== 'menu') combat.draw(r, cam, water, enemyR, game.time);
     const sp = game.speed / 32;
     parts.draw(r, cam, water, game.time, -game.vx, -game.vy, Math.max(0, sp - 1.15) * 0.07 + game.nitroFx * 0.05);
     water.lightShafts(r, cam, vp.shafts);
     // 潜望镜：镜里的世界随艇身横滚旋转，然后画目镜圆框和分划线
     if (vp.scope > 0.01) {
       r.rotate(s.roll * vp.scope, cam.cx, cam.cy, water.rowPacked);
+      // 锁定：十字线中心附近、射程内最近的敌艇
+      const lockR = Math.min(r.W * 0.47, r.H * 0.46) * 0.2;
+      const targets = state === 'play' && vp.scope > 0.9 ? combat.scopeTargets(cam, s.roll * vp.scope, lockR) : [];
+      if (!targets.length) combat.lock = null;
       periscope.draw(r, {
         t: game.time, heading: s.heading, depth: (SURFACE_H - s.h) * 0.6, speedKn: game.speed * 0.5,
         nitro: game.nitro, nitroOn: game.nitroOn, clearance: s.h - world.heightSmooth(s.x, s.y),
         subX: s.x, subY: s.y, subH: s.h,
+        targets: targets.map((tg) => ({ x: tg.x, y: tg.y, size: tg.size, range: tg.range, locked: tg.e === combat.lock })),
+        contacts: state === 'menu' ? [] : combat.contacts(s),
+        reload: 1 - combat.reload / RELOAD, hull: combat.hull / HULL_MAX,
       }, world, vp.scope);
     }
   }
@@ -394,6 +459,19 @@ function frame(now: number) {
     if (state === 'play') showToast(z ? '紫雾海域' : '青绿海域', z ? 'VIOLET MIST' : 'TEAL SHALLOWS');
   }
   zoneEl.textContent = zone ? '紫雾海域' : '青绿海域';
+  const hl = Math.ceil((combat.hull / HULL_MAX) * HULL_N - 0.01);
+  if (hl !== hullLit) {
+    lightCells(hullIs, (hullLit = hl));
+    hullCells.className = 'cells ' + (combat.hull > 50 ? 'ok' : combat.hull > 25 ? 'mid' : 'low');
+  }
+  killsEl.textContent = String(combat.kills);
+  document.body.classList.toggle('lowhull', state === 'play' && combat.hull > 0 && combat.hull <= 25);
+  // 被打中：镜头震一下
+  if (shake > 0.01 && state === 'play') {
+    shake = Math.max(0, shake - dt * 2.2);
+    const a = shake * 6;
+    canvas.style.transform = `translate(${(Math.random() - 0.5) * a}px, ${(Math.random() - 0.5) * a}px)`;
+  } else if (canvas.style.transform) canvas.style.transform = '';
   zoneEl.classList.toggle('violet', zone === 1);
 
   // 太慢就自动降一档分辨率

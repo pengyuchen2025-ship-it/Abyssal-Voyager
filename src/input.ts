@@ -13,6 +13,7 @@ export class Input {
   private rollQueued = false;
   private viewQueued = false;
   private nitroQueued = false;
+  private fireQueued = false;
   private selectQueued = -1;
   private downAt = 0;
   private downX = 0;
@@ -32,9 +33,14 @@ export class Input {
     st.addEventListener('pointermove', (e) => this.move(e));
     st.addEventListener('pointerdown', (e) => {
       if ((e.target as HTMLElement).closest('[data-ui]')) return;
-      // 右键：氮气加速
+      // 右键：氮气加速；中键：发射鱼雷
       if (e.button === 2) {
         this.nitroQueued = true;
+        return;
+      }
+      if (e.button === 1) {
+        e.preventDefault();
+        this.fireQueued = true;
         return;
       }
       st.setPointerCapture?.(e.pointerId);
@@ -64,6 +70,8 @@ export class Input {
       if (e.pointerType === 'mouse') this.px = this.py = null;
     });
     st.addEventListener('contextmenu', (e) => e.preventDefault());
+    // 中键默认会进入自动滚动模式，拦掉
+    st.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
     st.addEventListener('wheel', (e) => {
       e.preventDefault();
       this.wheel += Math.sign(e.deltaY) * -1;
@@ -74,6 +82,7 @@ export class Input {
         if (!e.repeat) this.viewQueued = true;
       }
       if ((e.code === 'KeyF' || e.code === 'KeyE') && !e.repeat) this.nitroQueued = true;
+      if (e.code === 'KeyQ' && !e.repeat) this.fireQueued = true;
       // 1 / 2 直接选视角
       if (e.code === 'Digit1' || e.code === 'Digit2') this.selectQueued = +e.code.slice(5) - 1;
       this.keys.add(e.code);
@@ -113,6 +122,13 @@ export class Input {
   setTouchRise(v: number) { this.touchRise = v; }
   queueView() { this.viewQueued = true; }
   queueNitro() { this.nitroQueued = true; }
+  queueFire() { this.fireQueued = true; }
+
+  takeFire(): boolean {
+    const f = this.fireQueued;
+    this.fireQueued = false;
+    return f;
+  }
 
   takeSelect(): number {
     const v = this.selectQueued;
@@ -128,7 +144,7 @@ export class Input {
 
   /** 丢掉所有排队的操作和按住的状态（开始 / 继续游戏时调用，免得按下的那个键被当成操作） */
   clear() {
-    this.rollQueued = this.viewQueued = this.nitroQueued = false;
+    this.rollQueued = this.viewQueued = this.nitroQueued = this.fireQueued = false;
     this.selectQueued = -1;
     this.wheel = 0;
     this.pointerDown = this.holdBoost = this.touchBoost = false;

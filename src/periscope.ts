@@ -17,7 +17,7 @@ const GLYPHS: Record<string, string> = {
   C: '011100100100011', D: '110101101101110', E: '111100110100111', G: '011100101101011',
   H: '101101111101101', K: '101110100110101', L: '100100100100111', M: '101111111101101',
   N: '101111111111101', O: '010101101101010', P: '110101110100100', R: '110101110101101',
-  S: '011100010001110', T: '111010010010010', W: '101101111111101',
+  S: '011100010001110', T: '111010010010010', U: '101101101101111', W: '101101111111101', Y: '101101010010010',
   '-': '000000111000000', '.': '000000000000010', ' ': '000000000000000',
 };
 
@@ -42,6 +42,13 @@ export interface ScopeData {
   depth: number; speedKn: number;
   nitro: number; nitroOn: boolean; clearance: number;
   subX: number; subY: number; subH: number;
+  /** 潜望镜里看得到的敌艇（屏幕坐标，已经转过横滚），locked：当前锁定的那艘 */
+  targets: { x: number; y: number; size: number; range: number; locked: boolean }[];
+  /** 声呐上的点：相对位置（右、前），kind 0 敌艇 1 敌方鱼雷 2 掉落物 */
+  contacts: { fx: number; fy: number; kind: number }[];
+  /** 鱼雷装填进度 0..1（1 = 可以发射），艇壳 0..1 */
+  reload: number;
+  hull: number;
 }
 
 export class Periscope {
@@ -177,6 +184,30 @@ export class Periscope {
       glow(icx + 1, y0 + 11, C.amber, 1);
     }
 
+    // ---- 敌艇：圆框里每艘画淡红色的角框；锁定的那艘画亮红色的框（一闪一闪）、LOCK 和距离 ----
+    for (const tg of d.targets) {
+      if (!inCircle(tg.x, tg.y, 6)) continue;
+      const sz = Math.max(6, Math.min(40, tg.size));
+      const L = Math.max(2, Math.round(sz * 0.4));
+      const c = tg.locked ? C.warn : [255, 120, 100];
+      const a = tg.locked ? (Math.sin(t * 16) > -0.3 ? 1 : 0.5) : 0.45;
+      const x0 = Math.round(tg.x - sz), x1 = Math.round(tg.x + sz), y0 = Math.round(tg.y - sz * 0.7), y1 = Math.round(tg.y + sz * 0.7);
+      for (let q = 0; q < L; q++) {
+        glow(x0 + q, y0, c, a); glow(x0, y0 + q, c, a);
+        glow(x1 - q, y0, c, a); glow(x1, y0 + q, c, a);
+        glow(x0 + q, y1, c, a); glow(x0, y1 - q, c, a);
+        glow(x1 - q, y1, c, a); glow(x1, y1 - q, c, a);
+      }
+      if (tg.locked) {
+        // 从十字线中心连一条虚线到目标
+        const n = Math.round(Math.hypot(tg.x - icx, tg.y - icy));
+        for (let q = 4; q < n - sz * 0.6; q += 3) glow(icx + ((tg.x - icx) * q) / n, icy + ((tg.y - icy) * q) / n, C.warn, 0.5);
+        this.text(r, 'LOCK', x0, y0 - 7, C.warn, a);
+        const rg = String(Math.round(tg.range * 0.6)).padStart(3, '0');
+        this.text(r, rg, x1 - textWidth(rg) + 1, y1 + 3, C.warn, 0.9);
+      }
+    }
+
     // ---- 壳体上的读数（只画在圆框外面） ----
     const pad = 6;
     const housingText = (str: string, x: number, y: number, c: number[]) => {
@@ -209,6 +240,22 @@ export class Periscope {
       }
       if (warn) housingText('LOW', right - textWidth('LOW'), y - 2, C.warn);
     }
+    // 左上：艇壳和鱼雷装填
+    {
+      const bar = (label: string, y: number, v: number, c: number[]) => {
+        const segs = 10, x0 = pad + 18;
+        if (inCircle(x0 + segs * 4, y, -4)) return;
+        this.text(r, label, pad, y, C.label, 1);
+        for (let sg = 0; sg < segs; sg++) {
+          const on = v * segs > sg + 0.01;
+          const cc = on ? c : [30, 40, 44];
+          for (let yy = 0; yy < 5; yy++) for (let q = 0; q < 3; q++) put(x0 + sg * 4 + q, y + yy, pack(cc[0], cc[1], cc[2]));
+        }
+      };
+      const hc = d.hull > 0.5 ? [120, 240, 150] : d.hull > 0.25 ? C.amber : C.warn;
+      bar('HULL', pad, d.hull, d.hull <= 0.25 && Math.sin(t * 10) < 0 ? [90, 30, 26] : hc);
+      bar('TORP', pad + 9, d.reload, d.reload >= 1 ? [255, 246, 216] : [120, 130, 140]);
+    }
 
     // ---- 声呐（左下角壳体上） ----
     {
@@ -235,7 +282,7 @@ export class Periscope {
             const k = Math.max(0, 1 - age / 1.3);
             put(S.x + x, S.y + y, pack(c[0] + 20 * k, c[1] + 70 * k, c[2] + 40 * k));
           }
-        const range = 190;
+        const range = 300;
         const sh = Math.sin(d.heading), chh = Math.cos(d.heading);
         const NA = 40, NR = 10;
         for (let ai = 0; ai < NA; ai++) {
@@ -256,6 +303,21 @@ export class Periscope {
           }
         }
         for (let q = 0; q < S.r; q++) glow(S.x + Math.sin(sweep) * q, S.y - Math.cos(sweep) * q, C.sonar, 0.85);
+        // 敌艇红点（超出量程的贴在边上、暗一点），敌方鱼雷橙色小点，掉落物黄色
+        for (const ct of d.contacts) {
+          const dd = Math.hypot(ct.fx, ct.fy);
+          const far = dd > range;
+          const k = (S.r - 2) / Math.max(range, dd);
+          const px = S.x + ct.fx * k, py = S.y - ct.fy * k;
+          if (ct.kind === 0) {
+            const on = Math.sin(t * 6) > -0.4;
+            const c = far ? [150, 50, 40] : on ? [255, 60, 50] : [190, 40, 34];
+            put(px, py, pack(c[0], c[1], c[2]));
+            put(px + 1, py, pack(c[0], c[1], c[2]));
+            put(px, py + 1, pack(c[0], c[1], c[2]));
+            put(px + 1, py + 1, pack(c[0], c[1], c[2]));
+          } else if (!far) put(px, py, ct.kind === 1 ? pack(255, 150, 60) : pack(255, 230, 90));
+        }
         put(S.x, S.y - 1, pack(255, 246, 216));
         put(S.x - 1, S.y + 1, pack(255, 246, 216));
         put(S.x + 1, S.y + 1, pack(255, 246, 216));

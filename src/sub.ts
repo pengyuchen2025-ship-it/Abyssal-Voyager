@@ -24,6 +24,12 @@ const PAL: RGB[] = [
   hex('#B8A25C'), // 9 螺旋桨桨叶（动态）
 ];
 const EMISSIVE = [0, 0, 0, 0, 1, 0, 0, 1, 0, 0];
+/** 敌方潜艇的配色：钢灰艇身、红色鳍、发红光的舷窗和探照灯 */
+export const ENEMY_PAL: RGB[] = [
+  [0, 0, 0],
+  hex('#66707E'), hex('#3A404C'), hex('#1A1D24'), hex('#FF4A3A'), hex('#B0342C'),
+  hex('#7A7E88'), hex('#FF7A5A'), hex('#8E98A6'), hex('#5A5E68'),
+];
 const PROP = 9;
 
 export class SubModel {
@@ -153,12 +159,12 @@ export class SubRenderer {
   /** 上一次绘制的屏幕信息（给 HUD / 输入用） */
   screen = { x: 0, y: 0, k: 1, depth: 0, visible: false };
 
-  constructor(private m: SubModel) {
-    for (let p = 0; p < PAL.length; p++) {
+  constructor(private m: SubModel, palette: RGB[] = PAL) {
+    for (let p = 0; p < palette.length; p++) {
       const row: number[] = [];
       for (let l = 0; l < 16; l++) {
         const k = EMISSIVE[p] ? 1.05 : 0.38 + (l / 15) * 0.82;
-        row.push(pack(PAL[p][0] * k, PAL[p][1] * k, PAL[p][2] * k));
+        row.push(pack(palette[p][0] * k, palette[p][1] * k, palette[p][2] * k));
       }
       this.pal.push(row);
     }
